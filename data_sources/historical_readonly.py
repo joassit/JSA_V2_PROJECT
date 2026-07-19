@@ -1,7 +1,12 @@
 """
-Acceso de SOLO LECTURA al historico compartido de `mlb_edge_analyzer.v2`
-(jsa/), vía JSA_HISTORICAL_DATABASE_URL_READONLY (rol de Postgres de solo
-lectura -- ver docs/scope_handoff.md, seccion "Acceso a datos").
+Acceso al historico compartido de `mlb_edge_analyzer.v2` (jsa/), vía
+config.JSA_SHARED_DATABASE_URL -- MISMA connection string que
+db/database.py, pero el rol de Postgres (`jsa_v2`) detras de ella solo
+tiene GRANT SELECT sobre estas 3 tablas en el schema `public` (nunca
+INSERT/UPDATE/DELETE ahi, reforzado por Postgres, no solo por este
+codigo) -- ver docs/scope_handoff.md, seccion "Acceso a datos" (revision
+2026-07-19: un solo Neon compartido, aislamiento por schema/rol en vez de
+por secret separado).
 
 Nombres de columna verificados contra `jsa/historical/db.py` del repo
 hermano (acceso directo al codigo fuente, no supuestos):
@@ -13,11 +18,12 @@ hermano (acceso directo al codigo fuente, no supuestos):
 - historical_statcast_event: game_pk, game_date, season, at_bat_number,
   pitch_number, inning_topbot, batter_id, pitcher_id, launch_speed, xwoba.
 
-Este modulo NUNCA emite INSERT/UPDATE/DELETE -- ademas del rol de
-Postgres de solo lectura (proteccion real a nivel de base de datos), cada
-funcion aqui usa unicamente `SELECT` explicito, y `config.READONLY_ALLOWED_TABLES`
-es la lista blanca contra la que se valida cualquier nombre de tabla
-antes de interpolarlo en una query.
+Este modulo NUNCA emite INSERT/UPDATE/DELETE -- ademas del permiso real
+de Postgres (el rol `jsa_v2` no tiene privilegio de escritura sobre estas
+tablas), cada funcion aqui usa unicamente `SELECT` explicito, y
+`config.READONLY_ALLOWED_TABLES` es la lista blanca contra la que se
+valida cualquier nombre de tabla antes de interpolarlo en una query --
+defensa en profundidad, no la unica barrera.
 """
 
 from __future__ import annotations
@@ -33,15 +39,16 @@ class ReadonlyAccessError(RuntimeError):
 
 
 def _engine() -> Engine:
-    if not config.JSA_HISTORICAL_DATABASE_URL_READONLY:
+    if not config.JSA_SHARED_DATABASE_URL:
         raise RuntimeError(
-            "JSA_HISTORICAL_DATABASE_URL_READONLY no esta configurada -- "
-            "ver docs/scope_handoff.md, seccion 'Acceso a datos', para "
-            "crear el rol de solo lectura en Neon."
+            "JSA_SHARED_DATABASE_URL no esta configurada -- ver "
+            "docs/scope_handoff.md, seccion 'Acceso a datos', para crear "
+            "el rol `jsa_v2` (SELECT en public + schema propio "
+            "`team_strength`) en el Neon compartido."
         )
     # SQLAlchemy abre la conexion perezosamente -- no valida credenciales
     # hasta el primer query real.
-    return create_engine(config.JSA_HISTORICAL_DATABASE_URL_READONLY)
+    return create_engine(config.JSA_SHARED_DATABASE_URL)
 
 
 def _assert_allowed(table: str) -> None:

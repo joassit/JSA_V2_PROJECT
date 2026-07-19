@@ -1,6 +1,6 @@
 """
 Tests del esquema propio contra SQLite en memoria -- nunca contra el
-TEAM_STRENGTH_DATABASE_URL real del entorno (se crea un engine propio en
+JSA_SHARED_DATABASE_URL real del entorno (se crea un engine propio en
 cada test, independiente del engine global del modulo).
 """
 

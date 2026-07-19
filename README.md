@@ -26,17 +26,22 @@ abiertas).
 
 Este proyecto **no comparte código** con `mlb_edge_analyzer.v2`/`jsa/` --
 mismo patrón que ya usa `cross_model/` en el repo hermano para comparar
-resultados sin importar código directamente. La única conexión permitida
-es de datos, y de **solo lectura**:
+resultados sin importar código directamente. El aislamiento de **datos**
+(revisión 2026-07-19) es por **schema de Postgres dentro del mismo Neon
+compartido**, no por proyecto/secret separado -- un solo secret:
 
-- `JSA_HISTORICAL_DATABASE_URL_READONLY`: rol de Postgres de solo lectura
-  (Neon) sobre `historical_game`, `historical_snapshot`,
-  `historical_statcast_event` del histórico ya validado de `jsa/` (5
-  temporadas, 13,101 juegos). Cualquier intento de escritura falla a
-  nivel de Postgres, no solo por convención de código.
-- `TEAM_STRENGTH_DATABASE_URL`: Postgres propio (Neon project separado)
-  para persistir lo que este proyecto construya (splits point-in-time,
-  linescore ingerido, resultados de candidate audits).
+- `JSA_SHARED_DATABASE_URL`: connection string del rol `jsa_v2` en el
+  MISMO Neon project donde vive el histórico de `jsa/`. Ese rol tiene
+  `GRANT SELECT` (nunca INSERT/UPDATE/DELETE, reforzado por Postgres) en
+  `public.historical_game` / `historical_snapshot` /
+  `historical_statcast_event` (5 temporadas, 13,101 juegos ya validados),
+  y es dueño exclusivo de su propio schema `team_strength`
+  (`search_path = team_strength, public`), donde caen automáticamente
+  las tablas propias de este proyecto (`linescore_game`,
+  `handedness_split_snapshot`, `pitcher_matchup_feature`,
+  `candidate_audit_result`) sin necesitar calificar el schema en el
+  código. Ver `docs/scope_handoff.md`, sección "Acceso a datos", para el
+  procedimiento completo de creación del rol/schema en Neon.
 
 ## Estado actual
 
@@ -54,7 +59,7 @@ factibilidad".
 
 ```
 JSA_V2_PROJECT/
-├── config.py                    # env vars: DATABASE_URL propia + readonly del histórico
+├── config.py                    # env var: JSA_SHARED_DATABASE_URL (un solo secret, aislamiento por schema)
 ├── data_sources/
 │   ├── mlb_api.py                 # splits vs mano (LHP/RHP), linescore -- NO verificado en vivo todavía
 │   └── historical_readonly.py     # lectura de historical_game/historical_snapshot/historical_statcast_event

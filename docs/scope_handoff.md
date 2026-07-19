@@ -105,45 +105,68 @@ todos los audits (`discriminative_audit`, `statcast_candidate_audit`,
   `historical_ingestion_run_metadata` -- metadata de corridas, menos
   util para este proyecto.
 
-**Como darle acceso a JSA_V2_PROJECT sin romper aislamiento -- rol de
-Postgres de SOLO LECTURA, nunca la connection string de escritura**:
+### Revision 2026-07-19: UN SOLO Neon compartido, no un Neon nuevo por rama
+
+**Decision revisada del usuario**, reemplaza el plan original de esta
+seccion (rol de solo lectura + Neon project nuevo separado, ver historial
+de commits para el texto anterior si hace falta). El mismo Postgres donde
+ya vive el histórico de JSA (`JSA_HISTORICAL_DATABASE_URL`) es la base
+para JSA_V2_PROJECT Y para cualquier rama futura -- no se crea un Neon
+project nuevo por proyecto. El aislamiento de escritura entre ramas se
+resuelve con **schemas de Postgres separados dentro del mismo Neon
+project**, no con proyectos separados -- permisos reales a nivel de base
+de datos, no solo disciplina de codigo.
+
+**Diseno: un rol por rama, lectura en `public` + escritura exclusiva en
+su propio schema**:
 
 1. En el dashboard de Neon del proyecto donde vive
    `JSA_HISTORICAL_DATABASE_URL`, pestaña "Roles" -> crear un rol nuevo
-   (ej. `jsa_v2_readonly`) -- Neon genera usuario/password automatico.
+   para esta rama (ej. `jsa_v2`) -- Neon genera usuario/password
+   automatico.
 2. Conectado UNA VEZ con el rol admin/owner existente, correr:
    ```sql
-   GRANT CONNECT ON DATABASE <nombre_de_la_db> TO jsa_v2_readonly;
-   GRANT USAGE ON SCHEMA public TO jsa_v2_readonly;
+   -- Lectura de las tablas historicas de JSA (schema public) --
+   -- nunca escritura sobre estas.
+   GRANT CONNECT ON DATABASE <nombre_de_la_db> TO jsa_v2;
+   GRANT USAGE ON SCHEMA public TO jsa_v2;
    GRANT SELECT ON historical_game, historical_snapshot,
-     historical_statcast_event TO jsa_v2_readonly;
-   -- opcional, para que tablas nuevas tambien queden de solo lectura
-   -- automaticamente sin repetir el GRANT cada vez:
-   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO jsa_v2_readonly;
-   ```
-3. La connection string de ese rol (Neon te da una URL distinta por rol,
-   mismo host/db, distinto usuario/password) es la que se guarda como
-   secret en el repo **`JSA_V2_PROJECT`** -- nombre de secret propio,
-   nunca el mismo string que usa la ingesta real:
-   `JSA_HISTORICAL_DATABASE_URL_READONLY`.
-4. Con ese rol, cualquier intento de `INSERT`/`UPDATE`/`DELETE` sobre esas
-   tablas falla a nivel de Postgres (no solo por convencion de codigo) --
-   la garantia de aislamiento queda reforzada por permisos reales, no
-   solo por disciplina de no escribir.
+     historical_statcast_event TO jsa_v2;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO jsa_v2;
 
-**JSA_V2_PROJECT necesita su PROPIA base para persistir lo que construya**
-(ratings de fortaleza de equipo, sus propios resultados de matchup,
-LOSO/bootstrap de sus hipotesis) -- mismo principio de 3 namespaces ya
-aplicado en este proyecto (legado: `DATABASE_URL`/`HISTORICAL_DATABASE_URL`;
-JSA: `JSA_DATABASE_URL`/`JSA_HISTORICAL_DATABASE_URL`): crear un **Neon
-project nuevo y separado** (plan gratuito, como los que ya existen) para
-JSA_V2_PROJECT, con su propio secret (ej. `TEAM_STRENGTH_DATABASE_URL`),
-en vez de compartir el mismo Neon del historico. Query pattern: leer
-`historical_game`/`historical_snapshot` via el rol de solo lectura,
-cruzar por `game_pk` con sus propias tablas nuevas en su propio Postgres.
+   -- Escritura exclusiva de esta rama: su propio schema, del que es dueño.
+   CREATE SCHEMA team_strength AUTHORIZATION jsa_v2;
+   ALTER ROLE jsa_v2 SET search_path = team_strength, public;
+   ```
+   Con `search_path = team_strength, public`: cualquier tabla nueva que
+   JSA_V2_PROJECT cree sin calificar schema (`linescore_game`,
+   `handedness_split_snapshot`, `pitcher_matchup_feature`,
+   `candidate_audit_result`) cae automaticamente en `team_strength`; las
+   lecturas de `historical_game`/`historical_snapshot`/
+   `historical_statcast_event` siguen resolviendo contra `public` porque
+   ahi es donde existen (segundo en el search_path).
+3. **Un solo secret** en el repo `JSA_V2_PROJECT`: `JSA_SHARED_DATABASE_URL`
+   (la connection string del rol `jsa_v2`) -- reemplaza el plan anterior
+   de dos secrets (`JSA_HISTORICAL_DATABASE_URL_READONLY` +
+   `TEAM_STRENGTH_DATABASE_URL`), ya no aplica.
+4. Cualquier intento de `INSERT`/`UPDATE`/`DELETE` sobre
+   `historical_game`/`historical_snapshot`/`historical_statcast_event`
+   falla a nivel de Postgres (el rol solo tiene `SELECT` ahi) -- la
+   garantia de aislamiento queda reforzada por permisos reales, no solo
+   por disciplina de no escribir.
+
+**Patron para "todas las ramas que hagamos"** (frase textual del
+usuario): cada proyecto hermano nuevo repite el mismo patron dentro de
+este MISMO Neon project -- su propio rol, su propio schema
+(`CREATE SCHEMA <nombre_rama> AUTHORIZATION <rol_rama>`), lectura en
+`public` (y opcionalmente en schemas de otras ramas si hace falta cruzar
+resultados mas adelante, con un GRANT explicito adicional). Un solo Neon
+que centraliza todo, aislamiento real por schema en vez de por
+infraestructura separada.
 
 Si mas adelante se quiere comparar resultados entre JSA_V2_PROJECT y
-JSA/legado, el patron ya existe y se reusa igual: extender
-`unified_model_predictions` (`cross_model/`) con un tercer sync de solo
-lectura hacia el Postgres nuevo de JSA_V2_PROJECT -- nunca import de
-codigo, nunca escritura cruzada.
+JSA/legado con SQL directo, el patron ya existe y se reusa igual:
+`unified_model_predictions` (`cross_model/`) puede vivir en su propio
+schema dentro de este mismo Neon, sincronizado por un job de solo
+lectura -- nunca import de codigo, nunca escritura cruzada entre schemas
+de ramas distintas.

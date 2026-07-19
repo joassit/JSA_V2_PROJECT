@@ -1,8 +1,16 @@
 """
 Configuracion central de JSA_V2_PROJECT.
 
-Aislamiento deliberado (ver docs/scope_handoff.md): DOS conexiones de
-base de datos distintas, nunca la misma.
+Aislamiento deliberado (ver docs/scope_handoff.md, seccion "Acceso a
+datos" -- revision 2026-07-19: un solo Neon compartido, aislamiento por
+SCHEMA de Postgres, no por proyecto/secret separado): UNA sola connection
+string (`JSA_SHARED_DATABASE_URL`), pero el rol de Postgres detras de esa
+URL (`jsa_v2`) solo tiene SELECT en `public` (tablas historicas de jsa/) y
+lectura+escritura exclusiva en su propio schema `team_strength` (via
+`ALTER ROLE jsa_v2 SET search_path = team_strength, public`). El
+aislamiento de escritura es un permiso real de Postgres, no una
+convencion de codigo -- este modulo NO decide que schema se usa, eso ya
+lo fija el rol al conectarse.
 """
 
 import os
@@ -17,20 +25,15 @@ MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
 # historical_snapshot.
 HISTORICAL_SEASONS = list(range(2022, 2027))
 
-# --- Base de datos PROPIA (lectura + escritura) ---
-# linescore_game, handedness_split_snapshot, pitcher_matchup_feature,
-# candidate_audit_result -- nunca las tablas del historico compartido.
-TEAM_STRENGTH_DATABASE_URL = os.getenv("TEAM_STRENGTH_DATABASE_URL")
-
-# --- Base de datos del historico compartido (SOLO LECTURA) ---
-# Rol de Postgres de solo lectura sobre historical_game/
-# historical_snapshot/historical_statcast_event del repo hermano
-# mlb_edge_analyzer.v2 (jsa/). Ver docs/scope_handoff.md, seccion
-# "Acceso a datos", para el procedimiento de creacion del rol en Neon.
-# Nunca debe apuntar a la misma connection string que usa la ingesta
-# real de jsa/ (JSA_HISTORICAL_DATABASE_URL, sin _READONLY) -- ese
+# --- Unico secret de base de datos: mismo Neon que jsa/, rol propio de esta rama ---
+# Lee/escribe con el rol `jsa_v2` (ver docs/scope_handoff.md): SELECT en
+# `public.historical_game`/`historical_snapshot`/`historical_statcast_event`
+# (schema de jsa/, compartido) + lectura/escritura total en su propio
+# schema `team_strength` (linescore_game, handedness_split_snapshot,
+# pitcher_matchup_feature, candidate_audit_result). Nunca la connection
+# string de escritura de jsa/ (`JSA_HISTORICAL_DATABASE_URL`) -- ese
 # secret no existe en este repo a proposito.
-JSA_HISTORICAL_DATABASE_URL_READONLY = os.getenv("JSA_HISTORICAL_DATABASE_URL_READONLY")
+JSA_SHARED_DATABASE_URL = os.getenv("JSA_SHARED_DATABASE_URL")
 
 # Tablas a las que este proyecto tiene permiso de LECTURA en el
 # historico compartido -- lista blanca explicita, ver

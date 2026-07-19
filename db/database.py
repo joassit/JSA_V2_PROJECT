@@ -1,13 +1,23 @@
 """
 Base de datos PROPIA de JSA_V2_PROJECT (lectura + escritura).
 
-Nunca comparte engine/sesion con el historico de solo lectura -- ver
-data_sources/historical_readonly.py para esa conexion, deliberadamente
-separada (ver docs/scope_handoff.md, seccion "Acceso a datos").
+Usa la MISMA connection string que data_sources/historical_readonly.py
+(config.JSA_SHARED_DATABASE_URL) -- el aislamiento entre "tablas propias"
+y "tablas historicas de jsa/" ya NO es por engine/secret separado, es por
+schema de Postgres: el rol `jsa_v2` detras de esa URL tiene
+`search_path = team_strength, public`, asi que las tablas de este archivo
+(sin schema calificado) caen automaticamente en `team_strength`, dueno
+exclusivo de ese schema -- Postgres, no este codigo, es quien impide que
+una tabla propia termine en `public`. Ver docs/scope_handoff.md, seccion
+"Acceso a datos" (revision 2026-07-19).
 
-Sin TEAM_STRENGTH_DATABASE_URL configurada, cae a SQLite local (cero
+Sin JSA_SHARED_DATABASE_URL configurada, cae a SQLite local (cero
 configuracion, util para tests y desarrollo) -- mismo criterio que
-DATABASE_URL en el proyecto legado.
+DATABASE_URL en el proyecto legado. SQLite no tiene schemas Postgres, asi
+que en modo local las tablas propias simplemente viven en el unico
+namespace del archivo .db -- no hay tablas historicas de jsa/ que
+proteger localmente de todas formas (esas solo existen en el Neon
+compartido).
 """
 
 from __future__ import annotations
@@ -144,7 +154,7 @@ class CandidateAuditResult(Base):
 
 
 def _resolve_url() -> str:
-    return config.TEAM_STRENGTH_DATABASE_URL or "sqlite:///team_strength.db"
+    return config.JSA_SHARED_DATABASE_URL or "sqlite:///team_strength.db"
 
 
 engine = create_engine(_resolve_url())

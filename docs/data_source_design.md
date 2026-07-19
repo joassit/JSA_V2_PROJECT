@@ -113,7 +113,7 @@ llamadas (estimado, sin paralelismo: varias horas; con
 `ThreadPoolExecutor` como ya usa `data/stats.py::get_bullpen_era()` del
 proyecto legado, sustancialmente menos -- a confirmar).
 
-### Diseño de tabla propia (`linescore_game`, en `TEAM_STRENGTH_DATABASE_URL`)
+### Diseño de tabla propia (`linescore_game`, schema `team_strength` dentro del Neon compartido, vía `JSA_SHARED_DATABASE_URL`)
 
 Ver `db/database.py` -- `game_pk` (PK), `home_f5_runs`, `away_f5_runs`,
 `home_total_runs`, `away_total_runs`, `home_f5_winner` (derivado, con
