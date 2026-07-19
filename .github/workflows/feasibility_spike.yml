@@ -1,0 +1,21 @@
+name: feasibility_spike
+
+# Solo lectura, sin persistir nada. Se agrega el archivo para que exista
+# la opcion de correrlo -- NO se dispara automaticamente (sin `push`/
+# `schedule`), y no debe dispararse sin confirmacion explicita del
+# usuario, mismo criterio que jsa_statcast_feasibility_spike.yml en el
+# repo hermano. Ver docs/data_source_design.md, seccion "Spike de
+# factibilidad".
+on:
+  workflow_dispatch: {}
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/feasibility_spike.py

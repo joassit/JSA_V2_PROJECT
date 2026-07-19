@@ -1,0 +1,161 @@
+"""
+Base de datos PROPIA de JSA_V2_PROJECT (lectura + escritura).
+
+Nunca comparte engine/sesion con el historico de solo lectura -- ver
+data_sources/historical_readonly.py para esa conexion, deliberadamente
+separada (ver docs/scope_handoff.md, seccion "Acceso a datos").
+
+Sin TEAM_STRENGTH_DATABASE_URL configurada, cae a SQLite local (cero
+configuracion, util para tests y desarrollo) -- mismo criterio que
+DATABASE_URL en el proyecto legado.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from sqlalchemy import (
+    JSON, Boolean, DateTime, Float, ForeignKey, Integer, String,
+    UniqueConstraint, create_engine,
+)
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+import config
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class LinescoreGame(Base):
+    """
+    Resultado por entrada de un juego historico -- ground truth que no
+    existe en `historical_game` del repo hermano. Base de la Linea 2
+    (especializacion por mercado First 5 / Totales).
+    """
+    __tablename__ = "linescore_game"
+
+    game_pk: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_date: Mapped[str] = mapped_column(String, nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    home_f5_runs: Mapped[int | None] = mapped_column(Integer)
+    away_f5_runs: Mapped[int | None] = mapped_column(Integer)
+    # 'home' / 'away' / 'tie' -- empate es un resultado valido en F5 (el
+    # juego sigue), a diferencia del ganador del juego completo.
+    home_f5_result: Mapped[str | None] = mapped_column(String)
+
+    home_total_runs: Mapped[int | None] = mapped_column(Integer)
+    away_total_runs: Mapped[int | None] = mapped_column(Integer)
+
+    # Linescore completo tal como lo devolvio la API, sin recortar --
+    # conserva la posibilidad de granularidad Early/Middle/Late Game
+    # futura sin tener que re-ingerir.
+    innings_raw: Mapped[dict | None] = mapped_column(JSON)
+
+    source: Mapped[str] = mapped_column(String, default="mlb_stats_api_linescore")
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class HandednessSplitSnapshot(Base):
+    """
+    Split de bateo de un equipo vs. una mano de lanzador, congelado
+    point-in-time (a la fecha de captura, no acumulado a hoy) -- insumo
+    de la Linea 1 (matchup pitcher-vs-lineup por mano).
+    """
+    __tablename__ = "handedness_split_snapshot"
+    __table_args__ = (
+        UniqueConstraint("team_id", "as_of_date", "vs_hand", name="uq_split_team_date_hand"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    as_of_date: Mapped[str] = mapped_column(String, nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+    vs_hand: Mapped[str] = mapped_column(String, nullable=False)  # 'L' o 'R'
+
+    ops: Mapped[float | None] = mapped_column(Float)
+    obp: Mapped[float | None] = mapped_column(Float)
+    slg: Mapped[float | None] = mapped_column(Float)
+    plate_appearances: Mapped[int | None] = mapped_column(Integer)
+
+    source: Mapped[str] = mapped_column(String, default="mlb_stats_api_sitcodes")
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class PitcherMatchupFeature(Base):
+    """
+    Feature point-in-time-safe por juego: OPS del lineup rival contra la
+    mano de CADA abridor especifico, listo para cruzar con
+    historical_game.winner (via el rol de solo lectura) en un
+    candidate audit LOSO.
+    """
+    __tablename__ = "pitcher_matchup_feature"
+
+    game_pk: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_date: Mapped[str] = mapped_column(String, nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    home_pitcher_id: Mapped[int | None] = mapped_column(Integer)
+    away_pitcher_id: Mapped[int | None] = mapped_column(Integer)
+    home_pitcher_throws: Mapped[str | None] = mapped_column(String)
+    away_pitcher_throws: Mapped[str | None] = mapped_column(String)
+
+    # OPS del lineup HOME contra la mano del abridor AWAY, y viceversa.
+    home_lineup_ops_vs_away_hand: Mapped[float | None] = mapped_column(Float)
+    away_lineup_ops_vs_home_hand: Mapped[float | None] = mapped_column(Float)
+
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class CandidateAuditResult(Base):
+    """
+    Resultado de un candidate audit LOSO + bootstrap -- mismo esquema de
+    decision que jsa/historical/*_candidate_audit.py, para que un futuro
+    cross_model pueda leerlo con el mismo criterio.
+    """
+    __tablename__ = "candidate_audit_result"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String, nullable=False)
+    hypothesis_name: Mapped[str] = mapped_column(String, nullable=False)
+    target: Mapped[str] = mapped_column(String, nullable=False)  # ej. "moneyline", "first5", "totals"
+
+    n_games: Mapped[int] = mapped_column(Integer, nullable=False)
+    coverage_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    auc: Mapped[float | None] = mapped_column(Float)
+
+    delta_brier_mean: Mapped[float] = mapped_column(Float, nullable=False)
+    ci_low: Mapped[float] = mapped_column(Float, nullable=False)
+    ci_high: Mapped[float] = mapped_column(Float, nullable=False)
+    significant: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    effect_size_ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    meets_all_3_conditions: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+def _resolve_url() -> str:
+    return config.TEAM_STRENGTH_DATABASE_URL or "sqlite:///team_strength.db"
+
+
+engine = create_engine(_resolve_url())
+SessionLocal = sessionmaker(bind=engine)
+
+
+def init_db() -> None:
+    """Crea las tablas propias si no existen. Nunca toca el historico compartido."""
+    Base.metadata.create_all(engine)
+
+
+if __name__ == "__main__":
+    init_db()
+    print(f"Tablas creadas en {_resolve_url()}")
