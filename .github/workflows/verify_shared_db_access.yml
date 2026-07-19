@@ -1,0 +1,23 @@
+name: verify_shared_db_access
+
+# workflow_dispatch manual -- este SI se dispara con confirmacion
+# explicita del usuario ("JSA_SHARED_DATABASE_URL ya quedo", 2026-07-19).
+# Unicamente lee `public.historical_game`, un intento de escritura ahi
+# se revierte siempre (ver scripts/verify_shared_db_access.py), y solo
+# escribe una fila de prueba (limpiada al final) en el schema propio
+# `team_strength`.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/verify_shared_db_access.py
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
