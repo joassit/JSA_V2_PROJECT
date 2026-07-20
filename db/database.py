@@ -157,7 +157,26 @@ def _resolve_url() -> str:
     return config.JSA_SHARED_DATABASE_URL or "sqlite:///team_strength.db"
 
 
-engine = create_engine(_resolve_url())
+def _build_engine():
+    url = _resolve_url()
+    if url.startswith("sqlite"):
+        # SQLite no tiene el concepto de schema de Postgres -- las tablas
+        # propias simplemente viven en el unico namespace del archivo .db.
+        return create_engine(url)
+
+    # No confiar en `ALTER ROLE ... SET search_path` del lado del servidor:
+    # Neon conecta via un pooler estilo PgBouncer, que no siempre reaplica
+    # el rolconfig por sesion logica (confirmado en produccion 2026-07-20 --
+    # el rolconfig quedo guardado pero `SHOW search_path` seguia devolviendo
+    # el default de Postgres). `schema_translate_map` reescribe cada
+    # referencia de tabla SIN schema calificado (todos los modelos de este
+    # archivo) a `team_strength.<tabla>` en tiempo de compilacion del SQL,
+    # del lado del cliente -- funciona sin importar el pooling ni el estado
+    # de sesion del servidor.
+    return create_engine(url, execution_options={"schema_translate_map": {None: "team_strength"}})
+
+
+engine = _build_engine()
 SessionLocal = sessionmaker(bind=engine)
 
 

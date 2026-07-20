@@ -4,20 +4,29 @@ aislamiento por schema (docs/scope_handoff.md, seccion "Acceso a datos")
 funciona como se espera -- corre DESPUES de que el usuario confirma que
 JSA_SHARED_DATABASE_URL ya esta configurado como secret.
 
-4 checks, en este orden:
-1. Conexion + schema activo (`current_schema()`) -- debe resolver a
-   `team_strength`, confirmando que `search_path` del rol `jsa_v2` quedo
-   bien configurado.
-2. Lectura de `historical_game` (schema `public`) -- cuenta filas, prueba
+5 checks, en este orden:
+1. INFORMATIVO, no bloqueante: `current_schema()`/`search_path` de la
+   sesion. Neon conecta via un pooler estilo PgBouncer que no siempre
+   reaplica `ALTER ROLE ... SET search_path` por sesion logica (confirmado
+   en produccion 2026-07-20 -- el rolconfig quedaba guardado pero
+   `SHOW search_path` seguia devolviendo el default) -- por eso
+   db/database.py YA NO depende de esto: usa `schema_translate_map` para
+   forzar `team_strength.<tabla>` explicitamente en cada query, sin
+   importar el estado de la sesion del pooler. Este check se deja solo
+   como diagnostico, no afecta el resultado final.
+2. Privilegios reales sobre el schema `team_strength` (existencia +
+   CREATE + USAGE) -- diagnostico directo, no depende de que un CREATE
+   TABLE tenga exito.
+3. Lectura de `historical_game` (schema `public`) -- cuenta filas, prueba
    que el GRANT SELECT funciona y trae un numero cercano a 13,101.
-3. Verificacion NEGATIVA: un intento de INSERT sobre `historical_game`
+4. Verificacion NEGATIVA: un intento de INSERT sobre `historical_game`
    DEBE fallar con error de permisos -- envuelto en una transaccion que
    siempre hace ROLLBACK (nunca se compromete pase lo que pase), asi que
    incluso si el permiso estuviera mal configurado y el INSERT
    "funcionara", no se persiste nada. Si este check NO falla, es una
    alerta de que el aislamiento de escritura esta roto -- se reporta como
    tal, no se trata como exito.
-4. Escritura real en el schema propio: `db.database.init_db()` crea las
+5. Escritura real en el schema propio: `db.database.init_db()` crea las
    tablas propias, y una fila de prueba en `linescore_game` confirma que
    cae en `team_strength` (no en `public`).
 
@@ -148,14 +157,26 @@ def check_write_own_schema() -> dict:
         ).scalar()
 
         # Limpieza: esta fila es solo de verificacion, no un juego real.
-        session.execute(text("DELETE FROM linescore_game WHERE game_pk = :pk"), {"pk": _SENTINEL_GAME_PK})
+        # Via ORM (no text() crudo) -- schema_translate_map SOLO reescribe
+        # SQL construido por Core/ORM, nunca texto plano, asi que un
+        # `DELETE FROM linescore_game` en texto crudo apuntaria al schema
+        # equivocado exactamente por la misma razon que search_path no es
+        # confiable (ver check_schema_and_search_path).
+        row = session.get(LinescoreGame, _SENTINEL_GAME_PK)
+        if row is not None:
+            session.delete(row)
         session.commit()
 
     return {"ok": schema == "team_strength", "table_schema": schema}
 
 
-_CHECKS = [
+# schema_and_search_path es INFORMATIVO -- db/database.py ya no depende
+# de search_path (usa schema_translate_map, ver ese archivo), asi que un
+# search_path "incorrecto" del lado del pooler ya no bloquea el resultado.
+_INFORMATIONAL_CHECKS = [
     ("schema_and_search_path", check_schema_and_search_path),
+]
+_BLOCKING_CHECKS = [
     ("team_strength_schema_privileges", check_team_strength_schema_privileges),
     ("read_historical_game", check_read_historical_game),
     ("write_denied_on_historical_game", check_write_denied_on_historical_game),
@@ -173,7 +194,7 @@ def main() -> int:
     # diagnostico en vez de perder toda la corrida (checks posteriores
     # siguen dando informacion util incluso si uno falla).
     results: dict = {}
-    for name, check_fn in _CHECKS:
+    for name, check_fn in _INFORMATIONAL_CHECKS + _BLOCKING_CHECKS:
         try:
             results[name] = check_fn()
         except Exception as e:  # noqa: BLE001 -- diagnostico, se reporta, no se oculta
@@ -181,16 +202,17 @@ def main() -> int:
 
     print(json.dumps(results, indent=2, default=str))
 
-    all_ok = all(r.get("ok") for r in results.values())
-    if not all_ok:
-        print("\nRESULTADO: al menos un check fallo -- revisar el diseno de "
-              "rol/schema en Neon antes de construir ingesta sobre esto.")
+    blocking_ok = all(results[name].get("ok") for name, _ in _BLOCKING_CHECKS)
+    if not blocking_ok:
+        print("\nRESULTADO: al menos un check bloqueante fallo -- revisar el "
+              "diseno de rol/schema en Neon antes de construir ingesta sobre esto.")
         return 1
 
-    print("\nRESULTADO: los 5 checks pasaron. El rol `jsa_v2` lee "
+    print("\nRESULTADO: los checks bloqueantes pasaron. El rol `jsa_v2` lee "
           "`public.historical_game`, NO puede escribir ahi, y SI puede "
-          "escribir en su propio schema `team_strength`. Listo para "
-          "empezar T1 (Totales) -- ver docs/data_source_design.md.")
+          "escribir en su propio schema `team_strength` (via "
+          "schema_translate_map, sin depender de search_path del pooler). "
+          "Listo para empezar T1 (Totales) -- ver docs/data_source_design.md.")
     return 0
 
 
