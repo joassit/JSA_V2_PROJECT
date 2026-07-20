@@ -34,13 +34,41 @@ real que no existía antes de esta sesión (`linescore_game`, ingerido
 **Documentado como candidato validado, sin adopción automática** (mismo
 criterio de gobernanza que el resto del ecosistema).
 
-## Resultado real de M1 (Matchup por mano) -- pendiente
+## Resultado real de M1 (Matchup por mano) -- 2026-07-20, línea cerrada
 
-Splits vs. mano ingeridos (2026-07-20): 44,382/51,242 exitosos (~87% de
-cobertura, resto son `team_id` no estándar del propio dataset de MLB
-Stats API -- juegos de exhibición/all-star, manejado con fallback al OPS
-general del equipo, nunca excluidos). Candidate audit M1 corriendo --
-resultado pendiente de completar.
+**Primer intento (Camino 1, roto -- ver "CORRECCIÓN" arriba)**: la
+ingesta con `sitCodes` combinado con `byDateRange` produjo splits
+"específicos" idénticos al OPS general (el parámetro no tiene efecto
+bajo `byDateRange`, confirmado en vivo). El candidate audit de esa
+ingesta dio `delta_brier_mean=0.0` EXACTO -- resultado descartado, no
+representa la hipótesis real.
+
+**Segundo intento (Camino 2, real)**: ingesta re-hecha día-por-día
+(51,242 snapshots escritos, ~93% de cobertura de fechas jugadas -- el
+resto son `team_id` no estándar del dataset de MLB Stats API, juegos de
+exhibición/all-star). Corrida real
+(`m1_matchup_candidate_audit.yml`, run
+[29726150591](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29726150591)),
+13,101 juegos, 100% de cobertura (fallback al OPS general cuando falta
+el split específico, 11,245/13,101 con split específico resuelto en al
+menos un lado):
+
+| Métrica | Modelo (M1: OPS específico vs. mano del abridor rival) | Baseline (OPS general, lo que ya usa `jsa/`) |
+|---|---|---|
+| AUC | 0.5537 | 0.5532 |
+| Brier | 0.27804 | 0.27675 |
+
+`delta_brier_mean = +0.00130` (CI `[0.00043, 0.00231]`, **significativo**,
+`|Δ|=0.0013 >= 0.001`) -- **2 de 3 condiciones a favor (significancia +
+tamaño de efecto), dirección equivocada**: sustituir el OPS general por
+el OPS específico vs. mano del abridor rival es **significativamente
+PEOR** en Brier que el baseline, pese a un AUC marginalmente mayor
+(0.5537 vs 0.5532) -- mismo patrón de "ordena un poco mejor pero
+calibra peor" que T1 crudo. **Decisión: NO se adopta, línea cerrada**,
+mismo criterio de gobernanza que el resto del ecosistema. La versión
+Camino 2 del diagnóstico confirma que el bug de `sitCodes` está
+realmente corregido (ya no aparece la advertencia de splits idénticos
+en la salida del script).
 
 ## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
 
