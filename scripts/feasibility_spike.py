@@ -19,8 +19,15 @@ impresión de un resumen a stdout, mismo patrón que
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
+
+# Permite `python scripts/feasibility_spike.py` desde cualquier cwd --
+# sin esto, `import data_sources...`/`import config` falla porque Python
+# solo agrega la carpeta del script (scripts/) a sys.path, no la raiz del
+# repo. Mismo patron que conftest.py usa para pytest.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from data_sources.mlb_api import (
     get_game_linescore,

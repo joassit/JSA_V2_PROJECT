@@ -29,7 +29,15 @@ revierte siempre.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from datetime import date, datetime, timezone
+
+# Permite `python scripts/verify_shared_db_access.py` desde cualquier cwd
+# -- sin esto, `import config` falla porque Python solo agrega la carpeta
+# del script (scripts/) a sys.path, no la raiz del repo donde vive
+# config.py. Mismo patron que conftest.py usa para pytest.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
