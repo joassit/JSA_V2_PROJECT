@@ -4,6 +4,52 @@ Mismo criterio que `jsa/docs/statcast_integration_design.md` en el repo
 hermano: este documento plantea hipótesis y protocolo de validación
 **antes de escribir ingesta real**, no decide que algo se adopta.
 
+## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
+
+Corrida real (`t1_totals_candidate_audit.yml`, workflow_dispatch,
+run [29713425613](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29713425613)),
+13,101 juegos (5 temporadas, 2022-2026), **100% de cobertura** (cero
+ingesta nueva -- todo desde `historical_snapshot` ya persistido):
+
+| Métrica | Modelo (T1: `mu_home+mu_away` vía Poisson) | Baseline (2× promedio de liga) |
+|---|---|---|
+| AUC | 0.5582 | 0.5212 |
+| Brier | 0.28792 | **0.25324** |
+
+`delta_brier_mean = +0.03467` (CI `[0.03036, 0.03931]`, **significativo**,
+`|Δ|=0.0347 >= 0.001`) -- **2 de 3 condiciones a favor (significancia +
+tamaño de efecto), pero la dirección es la equivocada**: T1 es
+**significativamente PEOR** que el baseline ingenuo, con una brecha mucho
+más grande que las líneas "borderline" anteriores (Elo/Pythagorean,
+`Δ≈0.0005`) -- aquí es casi 70x más grande. **Decisión: NO se adopta,
+línea cerrada**, mismo patrón que Trend/Historical/Statcast/Elo-Pythagorean/
+Game Flow (ver `jsa/docs/ROADMAP.md`).
+
+**Hallazgo honesto que vale la pena registrar**: pese a perder en Brier,
+T1 SÍ tiene mayor AUC que el baseline (0.558 vs 0.521) -- el modelo
+ordena/discrimina mejor, pero sus probabilidades están mal calibradas
+(la conversión vía Poisson CDF sobre una proyección cruda, sin ningún
+shrinkage ni calibración, es probablemente sobreconfiada -- mismo
+síntoma que `jsa/` ya documentó para Skellam sin calibrar en el proyecto
+legado: "estructuralmente sobreconfiado", corregido ahí con
+`alpha=0.5` de contracción hacia 0.5). Esto sugiere que la señal
+subyacente (`mu_home+mu_away`) no es inútil -- la implementación
+concreta de esta iteración (probabilidad cruda sin calibrar) sí lo es
+bajo el criterio de 3 condiciones.
+
+**Qué se conserva**: `analysis/totals_candidate_audit.py` +
+`analysis/stats_utils.py` (protocolo LOSO+bootstrap reutilizable) siguen
+disponibles para evaluar una versión CALIBRADA de T1 (ej. contracción
+hacia 0.5 tipo `alpha`, o una línea de Totales aprendida en vez de fija
+en 8.5) -- sería una hipótesis genuinamente distinta (T1b), no una
+repetición de esta, y requeriría autorización explícita antes de
+construirse.
+
+**Alcance exacto del rechazo**: se descarta específicamente esta
+implementación (Poisson sin calibrar, línea fija 8.5) de la proyección de
+Totales derivada de `historical_snapshot` -- no el concepto general de
+especialización por mercado de Totales.
+
 **Aviso de alcance honesto**: este sandbox no tiene salida de red hacia
 `statsapi.mlb.com` (confirmado: `CONNECT` devuelve 403 del proxy del
 entorno, igual que el bloqueo ya documentado contra

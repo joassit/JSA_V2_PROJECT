@@ -51,14 +51,18 @@ denegada por Postgres sobre esas tablas, y escritura funcionando en el
 schema propio `team_strength` -- ver `scripts/verify_shared_db_access.py`
 y su workflow.
 
-**T1 (Totales) implementado**: `analysis/totals_candidate_audit.py`
-recalcula la proyección de carreras totales (`mu_home + mu_away`) desde
-las variables point-in-time ya validadas en `historical_snapshot.payload`
--- re-derivación independiente de `jsa/engine/projected_runs.py`, cero
-ingesta nueva -- y la compara contra un baseline sin señal específica de
-equipo (promedio de liga), vía LOSO por temporada + bootstrap CI de 500
-resamples, mismo protocolo de 3 condiciones que `jsa/`. Ver
-`scripts/run_t1_totals_audit.py` y su workflow (`workflow_dispatch`).
+**T1 (Totales) -- corrido contra los 13,101 juegos reales, línea cerrada
+(2026-07-20)**: `analysis/totals_candidate_audit.py` recalcula la
+proyección de carreras totales (`mu_home + mu_away`) desde las variables
+point-in-time ya validadas en `historical_snapshot.payload` -- cero
+ingesta nueva. Resultado real: **significativamente PEOR** que el
+baseline de liga (`Δbrier=+0.0347`, CI `[0.0304, 0.0393]`, muy por encima
+del umbral mínimo de efecto) -- no se adopta, mismo patrón que
+Trend/Historical/Statcast/Elo-Pythagorean/Game Flow en `jsa/`. Detalle
+completo y el hallazgo de AUC vs. Brier (el modelo discrimina mejor pero
+está mal calibrado) en `docs/data_source_design.md`, sección "Resultado
+real de T1". Infraestructura conservada para una versión calibrada
+futura (T1b), no autorizada todavía.
 
 **Matchup por mano / Chase Rate (Línea 1)**: sigue en fase de diseño, sin
 ingesta -- este sandbox no tiene salida de red hacia `statsapi.mlb.com`
