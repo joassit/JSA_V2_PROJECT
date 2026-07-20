@@ -51,18 +51,21 @@ denegada por Postgres sobre esas tablas, y escritura funcionando en el
 schema propio `team_strength` -- ver `scripts/verify_shared_db_access.py`
 y su workflow.
 
-**T1 (Totales) -- corrido contra los 13,101 juegos reales, línea cerrada
-(2026-07-20)**: `analysis/totals_candidate_audit.py` recalcula la
-proyección de carreras totales (`mu_home + mu_away`) desde las variables
-point-in-time ya validadas en `historical_snapshot.payload` -- cero
-ingesta nueva. Resultado real: **significativamente PEOR** que el
-baseline de liga (`Δbrier=+0.0347`, CI `[0.0304, 0.0393]`, muy por encima
-del umbral mínimo de efecto) -- no se adopta, mismo patrón que
-Trend/Historical/Statcast/Elo-Pythagorean/Game Flow en `jsa/`. Detalle
-completo y el hallazgo de AUC vs. Brier (el modelo discrimina mejor pero
-está mal calibrado) en `docs/data_source_design.md`, sección "Resultado
-real de T1". Infraestructura conservada para una versión calibrada
-futura (T1b), no autorizada todavía.
+**T1 (Totales, crudo) -- línea cerrada (2026-07-20)**: `mu_home+mu_away`
+vía Poisson, sin calibrar, resultó **significativamente PEOR** que el
+baseline de liga (`Δbrier=+0.0347`) -- pero con mayor AUC (0.558 vs
+0.521), señal de que la proyección SÍ tenía información real, solo mal
+calibrada (probabilidades demasiado extremas).
+
+**T1b (Totales calibrado) -- ✅ PASA las 3 condiciones (2026-07-20)**:
+misma proyección + contracción hacia 0.5 (`alpha`), elegido vía
+leave-one-season-out real. `alpha=0.2` óptimo en las 5 temporadas **sin
+excepción**. `Δbrier=-0.00505` (CI `[-0.00637, -0.00364]`, significativo,
+por encima del umbral mínimo) -- **primer resultado positivo real de
+todo el proyecto**. No se adopta automáticamente (mismo criterio de
+gobernanza que el resto del ecosistema) -- ver `docs/data_source_design.md`,
+sección "Resultado real de T1b", para el detalle completo y qué
+significaría "adoptarlo".
 
 **Matchup por mano / Chase Rate (Línea 1)**: sigue en fase de diseño, sin
 ingesta -- este sandbox no tiene salida de red hacia `statsapi.mlb.com`

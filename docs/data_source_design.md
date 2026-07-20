@@ -50,6 +50,56 @@ implementación (Poisson sin calibrar, línea fija 8.5) de la proyección de
 Totales derivada de `historical_snapshot` -- no el concepto general de
 especialización por mercado de Totales.
 
+## Resultado real de T1b (Totales calibrado) -- 2026-07-20, PASA las 3 condiciones
+
+Corrida real (`t1b_calibrated_audit.yml`, run
+[29715127665](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715127665)),
+mismos 13,101 juegos, 100% cobertura. Se aplicó `calibrate_prob(p, alpha)
+= 0.5 + alpha*(p-0.5)` a la probabilidad cruda de T1, eligiendo `alpha`
+vía **leave-one-season-out real** (el alpha óptimo de cada fold se busca
+únicamente en las otras 4 temporadas, nunca viendo la que se evalúa):
+
+| Temporada excluida | Alpha elegido (en las otras 4) |
+|---|---|
+| 2022 | 0.2 |
+| 2023 | 0.2 |
+| 2024 | 0.2 |
+| 2025 | 0.2 |
+| 2026 | 0.2 |
+
+**`alpha=0.2` óptimo en las 5 temporadas SIN EXCEPCIÓN** -- mismo patrón
+de estabilidad que encontró el proyecto legado al calibrar Skellam
+(`alpha=0.5` óptimo en sus 4 temporadas sin excepción). No es un ajuste
+frágil a una sola muestra.
+
+| Métrica | T1 crudo | T1b calibrado (LOSO) | Baseline (liga) |
+|---|---|---|---|
+| Brier | 0.28792 | **0.24819** | 0.25324 |
+| AUC | 0.5582 | 0.5582 (invariante a la calibración) | 0.5212 |
+
+`delta_brier_mean = -0.00505` (CI `[-0.00637, -0.00364]`, **significativo**,
+`|Δ|=0.00505 >= 0.001`) -- **las 3 condiciones se cumplen**: mejora real
+(negativo), significativa (CI enteramente del lado negativo), y con
+tamaño de efecto por encima del mínimo. Además generaliza de verdad: cada
+predicción usó un `alpha` elegido SIN ver la temporada evaluada (LOSO
+real, no un ajuste retroactivo sobre todo el dataset).
+
+**Interpretación**: la proyección cruda de T1 (`mu_home+mu_away`) SÍ
+tenía señal real (por eso su AUC ya superaba al baseline) -- lo que
+fallaba era la conversión a probabilidad, demasiado extrema/confiada. Con
+la misma corrección de contracción hacia 0.5 que ya usó el proyecto
+legado para Skellam, esa señal se traduce en probabilidades mejor
+calibradas y el resultado supera al baseline de forma consistente.
+
+**Este es el primer resultado positivo real de todo este proyecto (y de
+las líneas evaluadas en esta sesión) que cumple las 3 condiciones.**
+Sigue la misma regla de gobernanza que el resto del ecosistema: **no se
+adopta automáticamente** -- queda documentado como candidato validado,
+pendiente de decisión explícita del usuario sobre si/cómo usarlo (este
+proyecto no tiene todavía un sistema de picks en vivo; "adoptar" aquí
+significaría, como mínimo, fijar `project_total_runs() + calibrate_prob(alpha=0.2)`
+como la fórmula de Totales recomendada para cualquier uso futuro).
+
 **Aviso de alcance honesto**: este sandbox no tiene salida de red hacia
 `statsapi.mlb.com` (confirmado: `CONNECT` devuelve 403 del proxy del
 entorno, igual que el bloqueo ya documentado contra
