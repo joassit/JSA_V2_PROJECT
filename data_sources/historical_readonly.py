@@ -79,6 +79,31 @@ def get_games_for_season(season: int) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_games_with_snapshots_for_season(season: int) -> list[dict]:
+    """
+    JOIN de historical_game + historical_snapshot por game_pk, en una sola
+    query -- para auditorias que necesitan la temporada completa (miles de
+    juegos), evita N+1 round-trips de get_games_for_season() +
+    get_snapshot_payload() por juego. Solo juegos con AMBOS: resultado real
+    (winner no nulo) y snapshot point-in-time-safe ya persistido.
+    """
+    _assert_allowed("historical_game")
+    _assert_allowed("historical_snapshot")
+    query = text(
+        """
+        SELECT g.game_pk, g.game_date, g.season, g.home_score, g.away_score, g.winner,
+               s.payload
+        FROM historical_game g
+        JOIN historical_snapshot s ON s.game_pk = g.game_pk
+        WHERE g.season = :season AND g.winner IS NOT NULL
+        ORDER BY g.game_date
+        """
+    )
+    with _engine().connect() as conn:
+        rows = conn.execute(query, {"season": season}).mappings().all()
+    return [dict(r) for r in rows]
+
+
 def get_snapshot_payload(game_pk: int) -> dict | None:
     """
     El GameSnapshot point-in-time-safe completo (ERA/OPS con shrinkage,

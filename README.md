@@ -45,15 +45,29 @@ compartido**, no por proyecto/secret separado -- un solo secret:
 
 ## Estado actual
 
-**Fase de diseño.** No hay ingesta real corrida todavía -- este sandbox
-no tiene salida de red hacia `statsapi.mlb.com` (confirmado: `CONNECT`
-devuelve 403 del proxy), así que ningún endpoint de este documento está
-verificado en vivo desde aquí. El siguiente paso técnico obligatorio,
-antes de confiar en los parámetros exactos, es correr
-`scripts/feasibility_spike.py` desde un workflow de GitHub Actions (que
-sí tiene red real) -- mismo patrón que usó `jsa/` para Statcast antes de
-escribir ingesta real. Ver `docs/data_source_design.md` Sección "Spike de
-factibilidad".
+**Acceso a datos verificado en producción (2026-07-20)**: lectura real de
+`historical_game`/`historical_snapshot` (13,101 juegos), escritura
+denegada por Postgres sobre esas tablas, y escritura funcionando en el
+schema propio `team_strength` -- ver `scripts/verify_shared_db_access.py`
+y su workflow.
+
+**T1 (Totales) implementado**: `analysis/totals_candidate_audit.py`
+recalcula la proyección de carreras totales (`mu_home + mu_away`) desde
+las variables point-in-time ya validadas en `historical_snapshot.payload`
+-- re-derivación independiente de `jsa/engine/projected_runs.py`, cero
+ingesta nueva -- y la compara contra un baseline sin señal específica de
+equipo (promedio de liga), vía LOSO por temporada + bootstrap CI de 500
+resamples, mismo protocolo de 3 condiciones que `jsa/`. Ver
+`scripts/run_t1_totals_audit.py` y su workflow (`workflow_dispatch`).
+
+**Matchup por mano / Chase Rate (Línea 1)**: sigue en fase de diseño, sin
+ingesta -- este sandbox no tiene salida de red hacia `statsapi.mlb.com`
+(confirmado: `CONNECT` devuelve 403 del proxy), así que ningún endpoint
+de `data_sources/mlb_api.py` está verificado en vivo desde aquí. El
+siguiente paso técnico, antes de confiar en los parámetros exactos, es
+correr `scripts/feasibility_spike.py` desde un workflow de GitHub Actions
+(que sí tiene red real). Ver `docs/data_source_design.md` sección "Spike
+de factibilidad".
 
 ## Estructura
 
@@ -63,15 +77,20 @@ JSA_V2_PROJECT/
 ├── data_sources/
 │   ├── mlb_api.py                 # splits vs mano (LHP/RHP), linescore -- NO verificado en vivo todavía
 │   └── historical_readonly.py     # lectura de historical_game/historical_snapshot/historical_statcast_event
+├── analysis/
+│   ├── stats_utils.py             # brier_score, roc_auc, bootstrap_delta_brier (protocolo LOSO+bootstrap)
+│   └── totals_candidate_audit.py  # T1: proyeccion de Totales vs baseline de liga
 ├── db/
 │   └── database.py                # tablas propias: linescore_game, handedness_split_snapshot,
 │                                   # pitcher_matchup_feature, candidate_audit_result
 ├── scripts/
-│   └── feasibility_spike.py       # spike de factibilidad -- NO autorizado para correr todavía
+│   ├── verify_shared_db_access.py # verificacion de permisos reales contra el Neon compartido
+│   ├── run_t1_totals_audit.py     # corre T1 contra el historico real y persiste el resultado
+│   └── feasibility_spike.py       # spike de factibilidad de la Linea 1 -- NO autorizado para correr todavía
 ├── docs/
 │   ├── scope_handoff.md           # mensaje de handoff (fuente de verdad del alcance)
 │   └── data_source_design.md      # diseño técnico de las 2 líneas abiertas
-└── tests/                         # tests puros (parseo, sin red ni DB real)
+└── tests/                         # tests puros (parseo, matemática, sin red ni DB real)
 ```
 
 ## Protocolo de validación (sin excepciones)
