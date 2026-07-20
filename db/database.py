@@ -97,6 +97,34 @@ class HandednessSplitSnapshot(Base):
     )
 
 
+class ChaseRateSnapshot(Base):
+    """
+    Chase rate de un equipo (ofensiva), congelado point-in-time -- % de
+    pitches FUERA de zona a los que el equipo le tira, acumulado
+    UNICAMENTE con juegos anteriores a `as_of_date` (nunca incluye el
+    propio dia). Insumo de la Linea 1, componente pendiente de
+    "Chase Rate" -- ver docs/data_source_design.md.
+    """
+    __tablename__ = "chase_rate_snapshot"
+    __table_args__ = (
+        UniqueConstraint("team_id", "as_of_date", name="uq_chase_team_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    as_of_date: Mapped[str] = mapped_column(String, nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    chase_rate: Mapped[float | None] = mapped_column(Float)
+    pitches_out_zone_seen: Mapped[int] = mapped_column(Integer, default=0)
+    swings_out_zone: Mapped[int] = mapped_column(Integer, default=0)
+
+    source: Mapped[str] = mapped_column(String, default="mlb_stats_api_playbyplay")
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class PitcherMatchupFeature(Base):
     """
     Feature point-in-time-safe por juego: OPS del lineup rival contra la

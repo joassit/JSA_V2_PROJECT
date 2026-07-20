@@ -70,6 +70,28 @@ Camino 2 del diagnóstico confirma que el bug de `sitCodes` está
 realmente corregido (ya no aparece la advertencia de splits idénticos
 en la salida del script).
 
+## Resultado real de M2 (Chase Rate) -- 2026-07-20, spike confirmado, ingesta/audit en curso
+
+Spike de factibilidad real (`feasibility_spike_chase_rate.yml`, runs
+[29764754175](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29764754175)/
+[29764772385](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29764772385)):
+`/game/{gamePk}/playByPlay` responde 200 (~0.12s), trae
+`pitchData.strikeZoneTop/Bottom` + `coordinates.pX/pZ` + `details.code`
+por pitch -- suficiente para clasificar dentro/fuera de zona y
+swing/take nosotros mismos. **Costo proyectado: ~202s con 8 workers
+para 13,101 juegos** -- y aquí 1 llamada cubre AMBOS equipos (no 1 por
+equipo-fecha como splits vs mano), mas barato que Línea 1.
+
+Hipótesis M2 (distinta de M1, que ya cerró la parte de OPS vs. mano):
+¿el chase rate point-in-time del equipo (% de swings a pitches fuera de
+zona, más bajo = mejor disciplina de plato) ajusta el OPS general y
+mejora la probabilidad de ganar el juego completo, comparado con el OPS
+general solo (mismo baseline que M1 -- lo que ya usa `jsa/`)? Peso de
+disciplina elegido vía LEAVE-ONE-SEASON-OUT (mismo patrón que T1b).
+`analysis/chase_rate_candidate_audit.py` + `scripts/ingest_chase_rate.py`
++ `scripts/run_m2_chase_rate_audit.py`. Ingesta y candidate audit real
+pendientes de correr.
+
 ## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
 
 Corrida real (`t1_totals_candidate_audit.yml`, workflow_dispatch,

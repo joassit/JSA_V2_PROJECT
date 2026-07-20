@@ -80,6 +80,23 @@ def parse_linescore(payload: dict) -> dict | None:
     }
 
 
+def get_game_play_by_play(game_pk: int, timeout: int = 15) -> dict | None:
+    """
+    JSON crudo de /game/{game_pk}/playByPlay -- pitch a pitch del juego
+    completo (ambos equipos, una sola llamada), confirmado en vivo
+    (scripts/feasibility_spike_chase_rate.py): cada pitch trae
+    pitchData.strikeZoneTop/Bottom, pitchData.coordinates.pX/pZ y
+    details.code. Nunca lanza.
+    """
+    try:
+        resp = _session.get(f"{config.MLB_API_BASE}/game/{game_pk}/playByPlay", timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener playByPlay del juego {game_pk}: {e}")
+        return None
+
+
 def get_pitcher_throws(pitcher_id: int, timeout: int = 15) -> str | None:
     """'L' o 'R', o None si falla. Nunca lanza."""
     try:

@@ -89,6 +89,14 @@ dirección equivocada -- **peor** que el OPS general, pese a AUC
 marginalmente mayor) -- **tercera hipótesis cerrada de esta sesión**
 (junto a T1 crudo), mismo patrón "ordena mejor, calibra peor".
 
+**M2 (Chase Rate) -- spike confirmado, ingesta/audit real pendiente
+(2026-07-20)**: `/game/{gamePk}/playByPlay` confirmado en vivo (zona de
+strike + coordenadas + swing/take por pitch), costo proyectado ~202s
+para los 13,101 juegos (1 llamada cubre ambos equipos). Hipótesis:
+chase rate point-in-time del equipo como ajuste al OPS general
+(peso elegido vía LOSO), comparado contra el mismo baseline de M1. Ver
+`docs/data_source_design.md`, sección "Resultado real de M2".
+
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
 confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa
