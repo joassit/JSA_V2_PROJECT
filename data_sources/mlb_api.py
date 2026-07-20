@@ -122,6 +122,38 @@ def get_team_hitting_split(
         return None
 
 
+def get_team_hitting_split_by_date_range(
+    team_id: int, start_date: str, end_date: str, vs_hand: str, season: int, timeout: int = 15
+) -> dict | None:
+    """
+    Igual que get_team_hitting_split() pero con stats=byDateRange -- si
+    esto funciona combinado con sitCodes, el split point-in-time se
+    puede reconstruir con 1 llamada por equipo por ventana en vez de
+    reconstruccion dia-por-dia desde game logs (ver docs/data_source_design.md,
+    "El problema point-in-time", camino 1 vs camino 2). start_date/end_date
+    en formato YYYY-MM-DD.
+    """
+    if vs_hand not in ("L", "R"):
+        raise ValueError(f"vs_hand debe ser 'L' o 'R', recibido: {vs_hand!r}")
+    sit_code = "vl" if vs_hand == "L" else "vr"
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/teams/{team_id}/stats",
+            params={
+                "stats": "byDateRange", "group": "hitting", "season": season,
+                "sitCodes": sit_code, "startDate": start_date, "endDate": end_date,
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(
+            f"No se pudo obtener split byDateRange vs {vs_hand} del equipo {team_id}: {e}"
+        )
+        return None
+
+
 def parse_team_hitting_split(payload: dict) -> dict | None:
     """Extrae ops/obp/slg/plateAppearances del JSON crudo de get_team_hitting_split()."""
     try:
