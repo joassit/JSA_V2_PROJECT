@@ -117,13 +117,24 @@ def poisson_over_prob(mu_total: float, line: float = TOTALS_LINE) -> float:
     return 1.0 - float(poisson.cdf(threshold, mu_total))
 
 
-def evaluate_t1(games: list[dict], n_resamples: int = 500, seed: int = 20260720) -> dict:
+def calibrate_prob(p_raw: float, alpha: float) -> float:
     """
-    games: lista de dicts con 'season', 'home_score', 'away_score', 'payload'.
-    Evalua T1 (candidato) vs baseline (promedio de liga), por temporada y
-    agregado (bootstrap CI sobre el pool completo).
+    p_calibrada = 0.5 + alpha*(p_cruda - 0.5) -- misma formula de
+    contraccion hacia 0.5 que ya uso el proyecto legado
+    (`mlb_edge_analyzer.v2/config.py`, calibracion de Skellam) para
+    corregir sobreconfianza. alpha=1.0 = sin cambio (T1 crudo);
+    alpha->0 = colapsa hacia 50/50.
     """
-    model_probs, baseline_probs, actuals, seasons = [], [], [], []
+    return 0.5 + alpha * (p_raw - 0.5)
+
+
+def _prepare_series(games: list[dict]) -> dict:
+    """
+    Un solo paso de filtrado/calculo reusado por evaluate_t1() y
+    evaluate_t1b_calibrated() -- evita recalcular project_total_runs()
+    dos veces sobre los mismos 13,101 juegos.
+    """
+    model_raw_probs, baseline_probs, actuals, seasons, mu_models = [], [], [], [], []
 
     for g in games:
         payload = g.get("payload")
@@ -138,18 +149,40 @@ def evaluate_t1(games: list[dict], n_resamples: int = 500, seed: int = 20260720)
         actual_total = home_score + away_score
         actual_over = 1 if actual_total > TOTALS_LINE else 0
 
-        model_probs.append(poisson_over_prob(mu_model))
+        mu_models.append(mu_model)
+        model_raw_probs.append(poisson_over_prob(mu_model))
         baseline_probs.append(poisson_over_prob(mu_baseline))
         actuals.append(actual_over)
         seasons.append(g.get("season"))
 
-    n_total = len(games)
+    return {
+        "n_total": len(games),
+        "mu_models": mu_models,
+        "model_raw_probs": model_raw_probs,
+        "baseline_probs": baseline_probs,
+        "actuals": actuals,
+        "seasons": seasons,
+    }
+
+
+def evaluate_t1(games: list[dict], n_resamples: int = 500, seed: int = 20260720) -> dict:
+    """
+    games: lista de dicts con 'season', 'home_score', 'away_score', 'payload'.
+    Evalua T1 (candidato CRUDO, sin calibrar) vs baseline (promedio de
+    liga), por temporada y agregado (bootstrap CI sobre el pool completo).
+    """
+    s = _prepare_series(games)
+    model_probs, baseline_probs, actuals, seasons = (
+        s["model_raw_probs"], s["baseline_probs"], s["actuals"], s["seasons"]
+    )
+
+    n_total = s["n_total"]
     n_covered = len(actuals)
     coverage_pct = (100.0 * n_covered / n_total) if n_total else 0.0
 
     by_season: dict[int, dict] = {}
     for season in sorted(set(seasons)):
-        idx = [i for i, s in enumerate(seasons) if s == season]
+        idx = [i for i, sn in enumerate(seasons) if sn == season]
         s_model = [model_probs[i] for i in idx]
         s_actuals = [actuals[i] for i in idx]
         by_season[season] = {
@@ -179,6 +212,81 @@ def evaluate_t1(games: list[dict], n_resamples: int = 500, seed: int = 20260720)
         "brier_model": brier_score(model_probs, actuals),
         "brier_baseline": brier_score(baseline_probs, actuals),
         "by_season": by_season,
+        **bootstrap,
+        "effect_size_ok": effect_size_ok,
+        "meets_all_3_conditions": meets_all_3,
+    }
+
+
+ALPHA_CANDIDATES: tuple[float, ...] = (0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+
+
+def evaluate_t1b_calibrated(
+    games: list[dict], alpha_candidates: tuple[float, ...] = ALPHA_CANDIDATES,
+    n_resamples: int = 500, seed: int = 20260720,
+) -> dict:
+    """
+    T1b -- misma proyeccion cruda de T1, pero con contraccion hacia 0.5
+    (`calibrate_prob`) elegida via LEAVE-ONE-SEASON-OUT: para cada
+    temporada excluida, el alpha optimo se busca SOLO en las otras 4
+    (nunca viendo la temporada que se va a evaluar -- sin fuga), igual
+    que `propose_dispersion_recalibration()` en el proyecto legado
+    (entrena en N-1 temporadas, mide en la excluida).
+
+    Reporta el alpha elegido por fold (para verificar si es estable
+    entre temporadas, como paso previo a confiar en el resultado) y el
+    Brier/AUC LOSO agregado (pooled, cada juego con el alpha de SU fold
+    de exclusion) comparado via bootstrap contra el mismo baseline de T1.
+    """
+    s = _prepare_series(games)
+    model_raw, baseline_probs, actuals, seasons = (
+        s["model_raw_probs"], s["baseline_probs"], s["actuals"], s["seasons"]
+    )
+    n_covered = len(actuals)
+    seasons_sorted = sorted(set(seasons))
+
+    fold_alphas: dict[int, dict] = {}
+    loso_calibrated_probs: list[float | None] = [None] * n_covered
+
+    for held_out in seasons_sorted:
+        train_idx = [i for i, sn in enumerate(seasons) if sn != held_out]
+        test_idx = [i for i, sn in enumerate(seasons) if sn == held_out]
+
+        best_alpha, best_train_brier = None, float("inf")
+        for alpha in alpha_candidates:
+            train_probs = [calibrate_prob(model_raw[i], alpha) for i in train_idx]
+            train_actuals = [actuals[i] for i in train_idx]
+            b = brier_score(train_probs, train_actuals)
+            if b is not None and b < best_train_brier:
+                best_train_brier, best_alpha = b, alpha
+
+        fold_alphas[held_out] = {"best_alpha": best_alpha, "train_brier": best_train_brier, "n_test": len(test_idx)}
+        for i in test_idx:
+            loso_calibrated_probs[i] = calibrate_prob(model_raw[i], best_alpha)
+
+    bootstrap = bootstrap_delta_brier(loso_calibrated_probs, baseline_probs, actuals, n_resamples=n_resamples, seed=seed)
+    effect_size_ok = bootstrap["delta_brier_mean"] is not None and abs(bootstrap["delta_brier_mean"]) >= 0.001
+    meets_all_3 = bool(
+        bootstrap["delta_brier_mean"] is not None
+        and bootstrap["delta_brier_mean"] < 0
+        and bootstrap["significant"]
+        and effect_size_ok
+    )
+
+    alphas_chosen = [v["best_alpha"] for v in fold_alphas.values()]
+    alpha_stable = len(set(alphas_chosen)) == 1 if alphas_chosen else False
+
+    return {
+        "hypothesis": "t1b_totals_calibrated",
+        "target": "totals",
+        "totals_line": TOTALS_LINE,
+        "n_games_covered": n_covered,
+        "fold_alphas": fold_alphas,
+        "alpha_stable_across_folds": alpha_stable,
+        "loso_brier_calibrated": brier_score(loso_calibrated_probs, actuals),
+        "loso_auc_calibrated": roc_auc(loso_calibrated_probs, actuals),
+        "brier_baseline": brier_score(baseline_probs, actuals),
+        "brier_t1_uncalibrated": brier_score(model_raw, actuals),
         **bootstrap,
         "effect_size_ok": effect_size_ok,
         "meets_all_3_conditions": meets_all_3,
