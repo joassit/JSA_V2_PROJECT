@@ -145,6 +145,29 @@ Mano del abridor (`throws`): `GET .../people/{pitcherId}` ->
 patrón ya usado en el ecosistema (`data/mlb_api.py` del proyecto legado
 consulta `/people/{id}` para otros campos), riesgo bajo.
 
+### Resultado real del spike -- 2026-07-20, todos los 4 checks pasaron
+
+Corrida real desde GitHub Actions (runs
+[29715141595](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715141595) y
+[29715224800](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715224800)):
+
+- `sitCodes=vl`/`vr` (`stats=season`): confirmado, responde con `ops`/`obp`/
+  `slg`/`plateAppearances` reales (ej. equipo 136 vs LHP 2024: OPS 0.687,
+  6067 PA).
+- Mano del abridor (`/people/{id}`): confirmado, `pitchHand.code` real.
+- `/game/{gamePk}/linescore`: confirmado, forma real con `innings[].home/
+  away.runs` (usado en Línea 2 también).
+- **`stats=byDateRange` combinado con `sitCodes` SÍ filtra por fecha de
+  verdad** (no lo ignora): mismo equipo/mano, ventana de abril 2024
+  (988 PA, OPS 0.671) vs. temporada completa (6067 PA, OPS 0.687) --
+  números coherentes con ~28 juegos de abril. **Camino 1 (barato) es
+  viable**: 1 llamada por equipo por fecha de corte (`startDate=inicio_
+  temporada, endDate=fecha_del_juego-1`), no reconstrucción día-por-día
+  desde game logs. Estimado: ~30 equipos × ~162 fechas × 5 temporadas ≈
+  24,300 llamadas, a ~30ms cada una según el spike -- del orden de
+  minutos en paralelo (mismo patrón `ThreadPoolExecutor` que ya usa
+  `data/stats.py::get_bullpen_era()` en el proyecto legado), no horas.
+
 ### El problema point-in-time (el mismo que ya resolvió `jsa/` para ERA/OPS)
 
 `stats=season` con `sitCodes` devuelve el acumulado **a la fecha de hoy**,
