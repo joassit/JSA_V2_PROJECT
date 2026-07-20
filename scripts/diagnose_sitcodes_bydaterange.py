@@ -32,18 +32,19 @@ START_DATE = "2024-03-28"
 END_DATE = "2024-06-30"
 
 
-def fetch(sit_code: str | None) -> dict:
+def fetch(sit_code: str | None, stats_type: str = "byDateRange") -> dict:
     params = {
-        "stats": "byDateRange", "group": "hitting", "season": SEASON,
+        "stats": stats_type, "group": "hitting", "season": SEASON,
         "startDate": START_DATE, "endDate": END_DATE,
     }
     if sit_code:
         params["sitCodes"] = sit_code
     resp = requests.get(f"{MLB_API_BASE}/teams/{TEAM_ID}/stats", params=params, timeout=15)
     resp.raise_for_status()
-    splits = resp.json()["stats"][0]["splits"]
+    body = resp.json()
+    splits = (body.get("stats") or [{}])[0].get("splits")
     if not splits:
-        return {"ops": None, "pa": None}
+        return {"ops": None, "pa": None, "raw_stats_key": body.get("stats")}
     stat = splits[0]["stat"]
     return {"ops": stat.get("ops"), "pa": stat.get("plateAppearances")}
 
@@ -69,6 +70,35 @@ def main() -> int:
     if sin_split == vs_l:
         print("Y ademas: sitCodes=vl == sin sitCodes -- el parametro se "
               "ignora por completo bajo byDateRange, no solo 'vl==vr'.")
+
+    print("\n--- Probando stats=byDateRangeAdvanced como alternativa ---")
+    try:
+        adv_l = fetch("vl", stats_type="byDateRangeAdvanced")
+        adv_r = fetch("vr", stats_type="byDateRangeAdvanced")
+        print(f"byDateRangeAdvanced sitCodes=vl: {adv_l}")
+        print(f"byDateRangeAdvanced sitCodes=vr: {adv_r}")
+        if adv_l != adv_r and adv_l.get("ops") is not None:
+            print("byDateRangeAdvanced SI distingue vl de vr -- alternativa viable, "
+                  "usar esto en vez de byDateRange para la ingesta point-in-time.")
+        else:
+            print("byDateRangeAdvanced tampoco distingue (o no devuelve datos) -- "
+                  "descartada como alternativa barata.")
+    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
+        print(f"byDateRangeAdvanced fallo: {e}")
+
+    print("\n--- Probando ventana de 1 solo dia (posible umbral distinto) ---")
+    try:
+        one_day_params_l = {
+            "stats": "byDateRange", "group": "hitting", "season": SEASON,
+            "startDate": "2024-04-10", "endDate": "2024-04-10", "sitCodes": "vl",
+        }
+        one_day_params_r = dict(one_day_params_l, sitCodes="vr")
+        resp_l = requests.get(f"{MLB_API_BASE}/teams/{TEAM_ID}/stats", params=one_day_params_l, timeout=15).json()
+        resp_r = requests.get(f"{MLB_API_BASE}/teams/{TEAM_ID}/stats", params=one_day_params_r, timeout=15).json()
+        print(f"1 dia sitCodes=vl: {resp_l.get('stats')}")
+        print(f"1 dia sitCodes=vr: {resp_r.get('stats')}")
+    except (requests.RequestException, KeyError, IndexError, ValueError) as e:
+        print(f"ventana 1 dia fallo: {e}")
 
     return 0
 
