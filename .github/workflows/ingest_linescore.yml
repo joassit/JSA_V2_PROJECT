@@ -1,0 +1,23 @@
+name: ingest_linescore
+
+# workflow_dispatch manual. Escribe SOLO en el schema propio
+# (linescore_game, team_strength) -- nunca toca historical_game/
+# historical_snapshot del repo hermano. Hechos historicos fijos (el
+# linescore de un juego ya jugado no cambia), sin problema de
+# point-in-time. Se dispara con confirmacion explicita del usuario.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/ingest_linescore.py
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
