@@ -67,14 +67,21 @@ gobernanza que el resto del ecosistema) -- ver `docs/data_source_design.md`,
 sección "Resultado real de T1b", para el detalle completo y qué
 significaría "adoptarlo".
 
-**Matchup por mano / Chase Rate (Línea 1)**: sigue en fase de diseño, sin
-ingesta -- este sandbox no tiene salida de red hacia `statsapi.mlb.com`
-(confirmado: `CONNECT` devuelve 403 del proxy), así que ningún endpoint
-de `data_sources/mlb_api.py` está verificado en vivo desde aquí. El
-siguiente paso técnico, antes de confiar en los parámetros exactos, es
-correr `scripts/feasibility_spike.py` desde un workflow de GitHub Actions
-(que sí tiene red real). Ver `docs/data_source_design.md` sección "Spike
-de factibilidad".
+**F1 (First 5 Innings) -- ✅ PASA las 3 condiciones (2026-07-20)**:
+ground truth real ingerido (`linescore_game`, 13,099/13,101 juegos).
+Reponderación First5-específica (abridor domina, bullpen casi ausente,
+escalado a 5/9 entradas) vs. proxy ingenuo (fórmula de juego completo).
+`Δbrier=-0.00165` (CI `[-0.00248,-0.00072]`, significativo, por encima
+del umbral) -- **segundo resultado positivo real** de esta sesión.
+
+**M1 (Matchup por mano)**: splits vs. LHP/RHP ingeridos point-in-time
+(44,382/51,242 exitosos, ~87%). Candidate audit en curso/pendiente de
+reportar -- ver `docs/data_source_design.md`.
+
+**Todos los spikes/ingestas de este proyecto corrieron en vivo contra
+GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
+confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa
+salida de red, `CONNECT` devuelve 403 del proxy local).
 
 ## Estructura
 

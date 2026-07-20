@@ -4,6 +4,44 @@ Mismo criterio que `jsa/docs/statcast_integration_design.md` en el repo
 hermano: este documento plantea hipótesis y protocolo de validación
 **antes de escribir ingesta real**, no decide que algo se adopta.
 
+## Resultado real de F1 (First 5 Innings) -- 2026-07-20, PASA las 3 condiciones
+
+Corrida real (`f1_first5_candidate_audit.yml`, run
+[29715571041](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715571041)),
+13,099 juegos (100% de los que tienen linescore ingerido). Candidato F1
+(abridor domina, `starter_weight=0.90`, escalado a 5/9 de la proyección
+de carreras) vs. baseline ingenuo (fórmula de juego completo,
+`starter_weight=0.65`, usada tal cual como proxy de F5):
+
+| Temporada | n | Brier F1 | AUC F1 |
+|---|---|---|---|
+| 2022 | 2739 | 0.2680 | 0.5549 |
+| 2023 | 2887 | 0.2723 | 0.5342 |
+| 2024 | 2836 | 0.2661 | 0.5467 |
+| 2025 | 2837 | 0.2765 | 0.5297 |
+| 2026 | 1800 | 0.2782 | 0.5195 |
+
+`delta_brier_mean = -0.00165` (CI `[-0.00248, -0.00072]`, **significativo**,
+`|Δ|=0.00165 >= 0.001`) -- **las 3 condiciones se cumplen**. Es la
+segunda hipótesis de esta sesión (junto a T1b) que muestra mejora real:
+una reponderación First-5-específica (abridor pesado, bullpen casi
+ausente, escalado a 5 entradas) predice el ganador real de F5 mejor que
+usar directamente la probabilidad de ganar el juego completo -- la
+pregunta original de la propuesta, ahora respondida con ground truth
+real que no existía antes de esta sesión (`linescore_game`, ingerido
+2026-07-20).
+
+**Documentado como candidato validado, sin adopción automática** (mismo
+criterio de gobernanza que el resto del ecosistema).
+
+## Resultado real de M1 (Matchup por mano) -- pendiente
+
+Splits vs. mano ingeridos (2026-07-20): 44,382/51,242 exitosos (~87% de
+cobertura, resto son `team_id` no estándar del propio dataset de MLB
+Stats API -- juegos de exhibición/all-star, manejado con fallback al OPS
+general del equipo, nunca excluidos). Candidate audit M1 corriendo --
+resultado pendiente de completar.
+
 ## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
 
 Corrida real (`t1_totals_candidate_audit.yml`, workflow_dispatch,
