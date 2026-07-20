@@ -134,10 +134,21 @@ su propio schema**:
      historical_statcast_event TO jsa_v2;
    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO jsa_v2;
 
-   -- Escritura exclusiva de esta rama: su propio schema, del que es dueño.
-   CREATE SCHEMA team_strength AUTHORIZATION jsa_v2;
+   -- Escritura exclusiva de esta rama: su propio schema.
+   CREATE SCHEMA team_strength;
+   GRANT CREATE, USAGE ON SCHEMA team_strength TO jsa_v2;
    ALTER ROLE jsa_v2 SET search_path = team_strength, public;
    ```
+   **Correccion 2026-07-20, contra Neon real**: `CREATE SCHEMA team_strength
+   AUTHORIZATION jsa_v2` (la version original de este documento) falla con
+   `ERROR: must be able to SET ROLE "jsa_v2" (SQLSTATE 42501)` -- el rol
+   conectado en el SQL editor de Neon (el owner de la base) no es miembro
+   de `jsa_v2` por defecto, y `AUTHORIZATION` exige poder impersonarlo. No
+   hace falta que `jsa_v2` sea DUEÑO del schema para que funcione: basta
+   con que tenga `CREATE`/`USAGE` sobre el -- quien ejecuta `CREATE TABLE`
+   dentro de un schema se vuelve automaticamente dueño de ESA tabla, sin
+   importar quien sea dueño del schema. La version de arriba (sin
+   `AUTHORIZATION`, con `GRANT` explicito) es la que de verdad se corrio.
    Con `search_path = team_strength, public`: cualquier tabla nueva que
    JSA_V2_PROJECT cree sin calificar schema (`linescore_game`,
    `handedness_split_snapshot`, `pitcher_matchup_feature`,
