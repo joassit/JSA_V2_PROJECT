@@ -100,6 +100,31 @@ def check_write_denied_on_historical_game() -> dict:
         session.close()
 
 
+def check_team_strength_schema_privileges() -> dict:
+    """
+    Diagnostico directo (no depende de que un CREATE TABLE tenga exito):
+    ¿existe el schema `team_strength`, y el rol actual tiene CREATE/USAGE
+    sobre el? Si esto sale en False, el problema es la configuracion del
+    rol/schema en Neon (ver docs/scope_handoff.md), no este codigo.
+    """
+    with SessionLocal() as session:
+        exists = session.execute(
+            text("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'team_strength'")
+        ).scalar()
+        has_create = session.execute(
+            text("SELECT has_schema_privilege(current_user, 'team_strength', 'CREATE')")
+        ).scalar() if exists else False
+        has_usage = session.execute(
+            text("SELECT has_schema_privilege(current_user, 'team_strength', 'USAGE')")
+        ).scalar() if exists else False
+    return {
+        "ok": bool(exists) and bool(has_create) and bool(has_usage),
+        "schema_exists": bool(exists),
+        "has_create": bool(has_create),
+        "has_usage": bool(has_usage),
+    }
+
+
 def check_write_own_schema() -> dict:
     init_db()
     with SessionLocal() as session:
@@ -129,17 +154,31 @@ def check_write_own_schema() -> dict:
     return {"ok": schema == "team_strength", "table_schema": schema}
 
 
+_CHECKS = [
+    ("schema_and_search_path", check_schema_and_search_path),
+    ("team_strength_schema_privileges", check_team_strength_schema_privileges),
+    ("read_historical_game", check_read_historical_game),
+    ("write_denied_on_historical_game", check_write_denied_on_historical_game),
+    ("write_own_schema", check_write_own_schema),
+]
+
+
 def main() -> int:
     if not config.JSA_SHARED_DATABASE_URL:
         print(json.dumps({"ok": False, "reason": "JSA_SHARED_DATABASE_URL no configurada"}))
         return 1
 
-    results = {
-        "schema_and_search_path": check_schema_and_search_path(),
-        "read_historical_game": check_read_historical_game(),
-        "write_denied_on_historical_game": check_write_denied_on_historical_game(),
-        "write_own_schema": check_write_own_schema(),
-    }
+    # Cada check corre aislado -- un check que lanza una excepcion NO
+    # detiene a los siguientes, y su resultado se reporta como parte del
+    # diagnostico en vez de perder toda la corrida (checks posteriores
+    # siguen dando informacion util incluso si uno falla).
+    results: dict = {}
+    for name, check_fn in _CHECKS:
+        try:
+            results[name] = check_fn()
+        except Exception as e:  # noqa: BLE001 -- diagnostico, se reporta, no se oculta
+            results[name] = {"ok": False, "exception": f"{type(e).__name__}: {e}"}
+
     print(json.dumps(results, indent=2, default=str))
 
     all_ok = all(r.get("ok") for r in results.values())
@@ -148,7 +187,7 @@ def main() -> int:
               "rol/schema en Neon antes de construir ingesta sobre esto.")
         return 1
 
-    print("\nRESULTADO: los 4 checks pasaron. El rol `jsa_v2` lee "
+    print("\nRESULTADO: los 5 checks pasaron. El rol `jsa_v2` lee "
           "`public.historical_game`, NO puede escribir ahi, y SI puede "
           "escribir en su propio schema `team_strength`. Listo para "
           "empezar T1 (Totales) -- ver docs/data_source_design.md.")
