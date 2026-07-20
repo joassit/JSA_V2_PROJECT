@@ -89,12 +89,17 @@ dirección equivocada -- **peor** que el OPS general, pese a AUC
 marginalmente mayor) -- **tercera hipótesis cerrada de esta sesión**
 (junto a T1 crudo), mismo patrón "ordena mejor, calibra peor".
 
-**M2 (Chase Rate) -- spike confirmado, ingesta/audit real pendiente
+**M2 (Chase Rate) -- ❌ NO pasa las 3 condiciones, línea cerrada
 (2026-07-20)**: `/game/{gamePk}/playByPlay` confirmado en vivo (zona de
-strike + coordenadas + swing/take por pitch), costo proyectado ~202s
-para los 13,101 juegos (1 llamada cubre ambos equipos). Hipótesis:
-chase rate point-in-time del equipo como ajuste al OPS general
-(peso elegido vía LOSO), comparado contra el mismo baseline de M1. Ver
+strike + coordenadas + swing/take por pitch, 1 llamada cubre ambos
+equipos). Ingesta real completa (25,621 snapshots, ~75 min totales --
+más lento que lo proyectado por el spike de 1 llamada, el JSON de
+pitch-a-pitch es pesado bajo carga paralela sostenida). Resultado real:
+`Δbrier=+0.0000227` (CI `[-0.000146, 0.000197]`, cruza cero, **NO
+significativo**) -- a diferencia de T1 crudo y M1 (peores en dirección
+clara), aquí el efecto es indistinguible de cero: **resultado nulo
+genuino**. El peso de disciplina óptimo saltó erráticamente entre folds
+LOSO (0.8/0.2/0.5/0.4/0.4, inestable) -- consistente con ruido. Ver
 `docs/data_source_design.md`, sección "Resultado real de M2".
 
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra

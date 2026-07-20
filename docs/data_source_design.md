@@ -70,17 +70,27 @@ Camino 2 del diagnóstico confirma que el bug de `sitCodes` está
 realmente corregido (ya no aparece la advertencia de splits idénticos
 en la salida del script).
 
-## Resultado real de M2 (Chase Rate) -- 2026-07-20, spike confirmado, ingesta/audit en curso
+## Resultado real de M2 (Chase Rate) -- 2026-07-20, línea cerrada (nulo, no negativo)
 
 Spike de factibilidad real (`feasibility_spike_chase_rate.yml`, runs
 [29764754175](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29764754175)/
 [29764772385](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29764772385)):
-`/game/{gamePk}/playByPlay` responde 200 (~0.12s), trae
-`pitchData.strikeZoneTop/Bottom` + `coordinates.pX/pZ` + `details.code`
-por pitch -- suficiente para clasificar dentro/fuera de zona y
-swing/take nosotros mismos. **Costo proyectado: ~202s con 8 workers
-para 13,101 juegos** -- y aquí 1 llamada cubre AMBOS equipos (no 1 por
-equipo-fecha como splits vs mano), mas barato que Línea 1.
+`/game/{gamePk}/playByPlay` responde 200 (~0.12s por llamada aislada),
+trae `pitchData.strikeZoneTop/Bottom` + `coordinates.pX/pZ` +
+`details.code` por pitch -- suficiente para clasificar dentro/fuera de
+zona y swing/take nosotros mismos. 1 llamada cubre AMBOS equipos (no 1
+por equipo-fecha como splits vs mano).
+
+**Costo real medido (mayor al proyectado por el spike de 1 sola
+llamada)**: la ingesta completa (`ingest_chase_rate.yml`, runs
+[29765267487](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29765267487)
+[cancelada a los 60 min por timeout, 4/5 temporadas completas] +
+[29784250297](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29784250297)
+[reanudada, termina 2026]) tardó **~14-15 min por temporada** bajo carga
+paralela sostenida (8 workers) -- el JSON de playByPlay es mucho más
+pesado que el boxscore diario de splits vs mano, y hubo timeouts de
+lectura ocasionales (15 de 13,101 llamadas, ~0.1%) bajo esa carga. Total:
+25,621 snapshots escritos (`chase_rate_snapshot`), ~15 min×5≈75 min.
 
 Hipótesis M2 (distinta de M1, que ya cerró la parte de OPS vs. mano):
 ¿el chase rate point-in-time del equipo (% de swings a pitches fuera de
@@ -88,9 +98,31 @@ zona, más bajo = mejor disciplina de plato) ajusta el OPS general y
 mejora la probabilidad de ganar el juego completo, comparado con el OPS
 general solo (mismo baseline que M1 -- lo que ya usa `jsa/`)? Peso de
 disciplina elegido vía LEAVE-ONE-SEASON-OUT (mismo patrón que T1b).
-`analysis/chase_rate_candidate_audit.py` + `scripts/ingest_chase_rate.py`
-+ `scripts/run_m2_chase_rate_audit.py`. Ingesta y candidate audit real
-pendientes de correr.
+
+Corrida real (`m2_chase_rate_candidate_audit.yml`, run
+[29786405599](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29786405599)),
+13,101 juegos, 100% de cobertura (12,927/13,101 con al menos 1 chase
+rate resuelto en algún lado, fallback al OPS sin ajustar en el resto):
+
+| Métrica | Modelo (M2: OPS ajustado por chase rate, peso vía LOSO) | Baseline (OPS general) |
+|---|---|---|
+| AUC | 0.55326 | 0.55320 |
+| Brier | 0.27677 | 0.27675 |
+
+`delta_brier_mean = +0.0000227` (CI `[-0.000146, 0.000197]`, **cruza
+cero, NO significativo**, `|Δ|=0.0000227 << 0.001` umbral mínimo) --
+**0 de 3 condiciones**. A diferencia de T1 crudo y M1 (que fueron
+significativamente PEORES), aquí el efecto es indistinguible de cero en
+ambas direcciones -- **resultado nulo genuino**, no un rechazo por
+dirección equivocada. El peso de disciplina óptimo por fold LOSO saltó
+erráticamente (2022→0.8, 2023→0.2, 2024→0.5, 2025→0.4, 2026→0.4,
+`weight_stable_across_folds=false`) -- consistente con ruido, no con una
+relación real que el modelo pueda aprender de forma estable.
+**Decisión: NO se adopta, línea cerrada.** El chase rate a nivel de
+equipo, aplicado como ajuste multiplicativo simple al OPS general, no
+aporta señal predictiva detectable para el resultado del juego completo
+bajo este diseño -- queda documentado como territorio ya explorado, no
+como "sin ingesta todavía".
 
 ## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
 
