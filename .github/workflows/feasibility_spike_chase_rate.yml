@@ -1,0 +1,20 @@
+name: feasibility_spike_chase_rate
+
+# workflow_dispatch manual. Solo lectura contra statsapi.mlb.com (schedule
+# + playByPlay de 1 juego) -- verifica el contrato real de datos
+# pitch-a-pitch (zona de strike + swing/take) antes de comprometerse a
+# ingerir nada. Sin DB, sin secrets.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: python scripts/feasibility_spike_chase_rate.py
