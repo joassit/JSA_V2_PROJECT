@@ -50,12 +50,12 @@ def _offense_factor(team_ops: float, league_ops: float) -> float:
 def _project_team_runs(
     team_ops: float, opp_starter_era: float, opp_bullpen_era: float, *,
     league_ops: float, league_era: float, park_factor: float, is_home: bool,
-    league_avg_runs_per_game: float,
+    league_avg_runs_per_game: float, starter_weight: float,
 ) -> float:
     off_factor = _offense_factor(team_ops, league_ops)
     opp_pitching_era = (
-        STARTER_WEIGHT_IN_PITCHING * opp_starter_era
-        + (1 - STARTER_WEIGHT_IN_PITCHING) * opp_bullpen_era
+        starter_weight * opp_starter_era
+        + (1 - starter_weight) * opp_bullpen_era
     )
     pitching_factor = opp_pitching_era / league_era if league_era > 0 else 1.0
     runs = league_avg_runs_per_game * off_factor * pitching_factor * park_factor
@@ -64,11 +64,14 @@ def _project_team_runs(
     return max(runs, 0.3)
 
 
-def project_total_runs(payload: dict) -> float | None:
+def project_runs_pair(
+    payload: dict, starter_weight: float = STARTER_WEIGHT_IN_PITCHING,
+) -> tuple[float, float] | None:
     """
-    mu_home + mu_away, recalculado desde un `historical_snapshot.payload`
-    real (GameSnapshot serializado) -- candidato T1. None si el payload
-    esta vacio.
+    (mu_home, mu_away) por separado -- expuesto para poder reusar la
+    misma formula base con un `starter_weight` distinto (ej. Linea 2/F1,
+    First 5 Innings: el abridor domina las primeras 5 entradas mucho mas
+    que el juego completo, el bullpen casi no participa todavia).
     """
     if not payload:
         return None
@@ -88,14 +91,24 @@ def project_total_runs(payload: dict) -> float | None:
     mu_home = _project_team_runs(
         home_ops, away_starter_era, away_bullpen_era, league_ops=league_ops,
         league_era=league_era, park_factor=park_factor, is_home=True,
-        league_avg_runs_per_game=league_rpg,
+        league_avg_runs_per_game=league_rpg, starter_weight=starter_weight,
     )
     mu_away = _project_team_runs(
         away_ops, home_starter_era, home_bullpen_era, league_ops=league_ops,
         league_era=league_era, park_factor=park_factor, is_home=False,
-        league_avg_runs_per_game=league_rpg,
+        league_avg_runs_per_game=league_rpg, starter_weight=starter_weight,
     )
-    return mu_home + mu_away
+    return mu_home, mu_away
+
+
+def project_total_runs(payload: dict) -> float | None:
+    """
+    mu_home + mu_away, recalculado desde un `historical_snapshot.payload`
+    real (GameSnapshot serializado) -- candidato T1. None si el payload
+    esta vacio.
+    """
+    pair = project_runs_pair(payload)
+    return None if pair is None else pair[0] + pair[1]
 
 
 def baseline_total_runs(payload: dict) -> float:

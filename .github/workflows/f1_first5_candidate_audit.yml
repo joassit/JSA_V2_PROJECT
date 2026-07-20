@@ -1,0 +1,20 @@
+name: f1_first5_candidate_audit
+
+# workflow_dispatch manual. Solo lectura sobre historical_game/
+# historical_snapshot (public) + linescore_game (propio) + una fila de
+# resultado en candidate_audit_result. Sin ingesta nueva.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/run_f1_first5_audit.py
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
