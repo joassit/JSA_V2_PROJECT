@@ -1,0 +1,24 @@
+name: ingest_handedness_splits
+
+# workflow_dispatch manual. Escribe SOLO en el schema propio
+# (handedness_split_snapshot, team_strength). Costo estimado ~45,000
+# llamadas a MLB Stats API (2 manos x ~150 fechas x 30 equipos x 5
+# temporadas), a ~30ms cada una segun el spike real -- del orden de
+# minutos con 8 workers en paralelo. Se dispara con confirmacion
+# explicita del usuario.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/ingest_handedness_splits.py
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
