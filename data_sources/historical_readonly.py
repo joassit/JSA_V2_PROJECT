@@ -91,7 +91,8 @@ def get_games_with_snapshots_for_season(season: int) -> list[dict]:
     _assert_allowed("historical_snapshot")
     query = text(
         """
-        SELECT g.game_pk, g.game_date, g.season, g.home_score, g.away_score, g.winner,
+        SELECT g.game_pk, g.game_date, g.season, g.home_team_id, g.away_team_id,
+               g.home_pitcher_id, g.away_pitcher_id, g.home_score, g.away_score, g.winner,
                s.payload
         FROM historical_game g
         JOIN historical_snapshot s ON s.game_pk = g.game_pk
