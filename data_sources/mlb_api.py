@@ -126,12 +126,17 @@ def get_team_hitting_split_by_date_range(
     team_id: int, start_date: str, end_date: str, vs_hand: str, season: int, timeout: int = 15
 ) -> dict | None:
     """
-    Igual que get_team_hitting_split() pero con stats=byDateRange -- si
-    esto funciona combinado con sitCodes, el split point-in-time se
-    puede reconstruir con 1 llamada por equipo por ventana en vez de
-    reconstruccion dia-por-dia desde game logs (ver docs/data_source_design.md,
-    "El problema point-in-time", camino 1 vs camino 2). start_date/end_date
-    en formato YYYY-MM-DD.
+    Igual que get_team_hitting_split() pero con stats=byDateRange.
+
+    CONFIRMADO ROTO (2026-07-20, scripts/diagnose_sitcodes_bydaterange.py):
+    `sitCodes` NO tiene efecto combinado con `stats=byDateRange` -- vl,
+    vr y sin sitCodes devuelven resultados identicos, incluso en ventanas
+    de 1 solo dia. Se conserva esta funcion solo porque
+    scripts/feasibility_spike.py y sus tests la documentan como parte del
+    historial de la investigacion -- NO USAR para ingesta real de splits
+    point-in-time, usar get_team_hitting_by_date() +
+    analysis.stats_utils.ops_from_raw_counts() en su lugar (Camino 2 de
+    docs/data_source_design.md). start_date/end_date en formato YYYY-MM-DD.
     """
     if vs_hand not in ("L", "R"):
         raise ValueError(f"vs_hand debe ser 'L' o 'R', recibido: {vs_hand!r}")
@@ -151,6 +156,55 @@ def get_team_hitting_split_by_date_range(
         logger.warning(
             f"No se pudo obtener split byDateRange vs {vs_hand} del equipo {team_id}: {e}"
         )
+        return None
+
+
+def get_team_hitting_by_date(team_id: int, game_date: str, season: int, timeout: int = 15) -> dict | None:
+    """
+    Linea de bateo cruda del equipo para UN SOLO dia (`stats=byDateRange`,
+    `startDate=endDate=game_date`). Sin `sitCodes` -- confirmado en vivo
+    (scripts/diagnose_sitcodes_bydaterange.py, corridas 29716014513 y
+    29716111744) que ese parametro NO tiene efecto combinado con
+    `byDateRange`, ni siquiera en ventanas de 1 dia. La clasificacion por
+    mano del lanzador rival se hace en `scripts/ingest_handedness_splits.py`
+    acumulando estos conteos crudos dia por dia (Camino 2 de
+    docs/data_source_design.md), no delegandola en la API.
+    """
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/teams/{team_id}/stats",
+            params={
+                "stats": "byDateRange", "group": "hitting", "season": season,
+                "startDate": game_date, "endDate": game_date,
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener linea de bateo diaria del equipo {team_id} @ {game_date}: {e}")
+        return None
+
+
+def parse_team_hitting_raw(payload: dict) -> dict | None:
+    """Conteos crudos (no ops/obp/slg precalculados) de una linea de
+    bateo -- insumo para acumular splits por mano nosotros mismos."""
+    try:
+        splits = payload["stats"][0]["splits"]
+        if not splits:
+            return None
+        stat = splits[0]["stat"]
+        return {
+            "ab": int(stat.get("atBats") or 0),
+            "h": int(stat.get("hits") or 0),
+            "bb": int(stat.get("baseOnBalls") or 0),
+            "hbp": int(stat.get("hitByPitch") or 0),
+            "sf": int(stat.get("sacFlies") or 0),
+            "tb": int(stat.get("totalBases") or 0),
+            "pa": int(stat.get("plateAppearances") or 0),
+        }
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        logger.warning(f"No se pudo parsear linea de bateo cruda: {e}")
         return None
 
 

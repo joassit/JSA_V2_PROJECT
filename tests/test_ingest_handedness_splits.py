@@ -27,104 +27,115 @@ def memory_session_local(monkeypatch):
 
 
 def _games():
+    # Equipo 100 juega 2 veces de local contra el 200: primero vs un
+    # abridor diestro (pitcher_id=1), despues vs uno zurdo (pitcher_id=2)
+    # -- permite verificar que la acumulacion es point-in-time (el split
+    # del 2do juego SI refleja el 1ro, el del 1ro NO refleja nada previo).
     return [
         {"game_pk": 1, "game_date": date(2024, 4, 10), "season": 2024,
          "home_team_id": 100, "away_team_id": 200, "home_pitcher_id": None,
-         "away_pitcher_id": None, "home_score": 3, "away_score": 1, "winner": "home"},
+         "away_pitcher_id": 1, "home_score": 3, "away_score": 1, "winner": "home"},
+        {"game_pk": 2, "game_date": date(2024, 4, 15), "season": 2024,
+         "home_team_id": 100, "away_team_id": 200, "home_pitcher_id": None,
+         "away_pitcher_id": 2, "home_score": 2, "away_score": 4, "winner": "away"},
     ]
 
 
-def test_ingest_season_fetches_both_hands_for_both_teams(monkeypatch, memory_session_local):
+_LINE_GAME1 = {"ab": 30, "h": 10, "bb": 3, "hbp": 0, "sf": 0, "tb": 18, "pa": 33}
+
+
+def _patch_common(monkeypatch, lines: dict[tuple[int, str], dict], hands: dict[int, str]):
     monkeypatch.setattr(mod, "get_games_for_season", lambda season: _games())
+    monkeypatch.setattr(mod, "get_pitcher_throws", lambda pid: hands.get(pid))
 
     calls = []
 
-    def fake_get_split(team_id, start_date, end_date, vs_hand, season):
-        calls.append((team_id, start_date, end_date, vs_hand, season))
-        return {"raw": True}
+    def fake_get_daily(team_id, game_date, season):
+        calls.append((team_id, game_date, season))
+        return lines.get((team_id, game_date))
 
-    monkeypatch.setattr(mod, "get_team_hitting_split_by_date_range", fake_get_split)
-    monkeypatch.setattr(mod, "parse_team_hitting_split", lambda raw: {"ops": 0.75, "obp": 0.33, "slg": 0.42, "plate_appearances": 100})
-
-    result = mod.ingest_season(2024)
-
-    # 2 equipos x 2 manos = 4 llamadas
-    assert result["attempted"] == 4
-    assert result["ok"] == 4
-    assert len(calls) == 4
-    team_ids = {c[0] for c in calls}
-    assert team_ids == {100, 200}
-    hands = {c[3] for c in calls}
-    assert hands == {"L", "R"}
+    monkeypatch.setattr(mod, "get_team_hitting_by_date", fake_get_daily)
+    monkeypatch.setattr(mod, "parse_team_hitting_raw", lambda raw: raw)
+    return calls
 
 
-def test_cutoff_is_day_before_game_date(monkeypatch, memory_session_local):
-    monkeypatch.setattr(mod, "get_games_for_season", lambda season: _games())
-
-    calls = []
-
-    def fake_get_split(team_id, start_date, end_date, vs_hand, season):
-        calls.append(end_date)
-        return {"raw": True}
-
-    monkeypatch.setattr(mod, "get_team_hitting_split_by_date_range", fake_get_split)
-    monkeypatch.setattr(mod, "parse_team_hitting_split", lambda raw: {"ops": 0.75, "obp": 0.33, "slg": 0.42, "plate_appearances": 100})
-
-    mod.ingest_season(2024)
-
-    # El juego es 2024-04-10 -- el corte debe ser 2024-04-09, nunca el mismo dia.
-    assert all(c == "2024-04-09" for c in calls)
-
-
-def test_upsert_writes_row_with_expected_values(monkeypatch, memory_session_local):
-    monkeypatch.setattr(mod, "get_games_for_season", lambda season: _games())
-    monkeypatch.setattr(mod, "get_team_hitting_split_by_date_range", lambda *a, **k: {"raw": True})
-    monkeypatch.setattr(mod, "parse_team_hitting_split", lambda raw: {"ops": 0.812, "obp": 0.34, "slg": 0.47, "plate_appearances": 55})
+def test_point_in_time_split_reflects_only_prior_games(monkeypatch, memory_session_local):
+    lines = {(100, "2024-04-10"): _LINE_GAME1}
+    _patch_common(monkeypatch, lines, hands={1: "R", 2: "L"})
 
     mod.ingest_season(2024)
 
     with memory_session_local() as session:
-        row = session.query(HandednessSplitSnapshot).filter_by(team_id=100, vs_hand="L").one()
-        # as_of_date es la fecha del JUEGO al que aplica el snapshot (para
-        # facilitar el join por game_date despues) -- el corte real
-        # enviado a la API (end_date, un dia antes) ya se verifica aparte
-        # en test_cutoff_is_day_before_game_date.
-        assert row.as_of_date == "2024-04-10"
-        assert row.ops == 0.812
-        assert row.plate_appearances == 55
+        rows = {(r.as_of_date, r.vs_hand): r for r in session.query(HandednessSplitSnapshot).filter_by(team_id=100).all()}
+
+    # Antes del primer juego: sin muestra todavia en ninguna mano.
+    assert rows[("2024-04-10", "R")].ops is None
+    assert rows[("2024-04-10", "L")].ops is None
+
+    # Antes del segundo juego: vs R ya refleja el 1er juego (rival diestro).
+    from analysis.stats_utils import ops_from_raw_counts
+    expected_ops = ops_from_raw_counts(**{k: v for k, v in _LINE_GAME1.items() if k != "pa"})
+    assert rows[("2024-04-15", "R")].ops == pytest.approx(expected_ops)
+    assert rows[("2024-04-15", "R")].plate_appearances == _LINE_GAME1["pa"]
+    # vs L sigue sin muestra -- el rival del 2do juego es zurdo, pero ese
+    # juego mismo nunca se filtra hacia atras.
+    assert rows[("2024-04-15", "L")].ops is None
 
 
-def test_skips_existing_without_force_and_overwrites_with_force(monkeypatch, memory_session_local):
-    monkeypatch.setattr(mod, "get_games_for_season", lambda season: _games())
+def test_daily_fetch_happens_once_per_team_per_date_not_per_hand(monkeypatch, memory_session_local):
+    lines = {(100, "2024-04-10"): _LINE_GAME1, (100, "2024-04-15"): _LINE_GAME1}
+    calls = _patch_common(monkeypatch, lines, hands={1: "R", 2: "L"})
 
-    call_count = {"n": 0}
+    mod.ingest_season(2024)
 
-    def fake_get_split(team_id, start_date, end_date, vs_hand, season):
-        call_count["n"] += 1
-        return {"raw": True}
-
-    monkeypatch.setattr(mod, "get_team_hitting_split_by_date_range", fake_get_split)
-    monkeypatch.setattr(mod, "parse_team_hitting_split", lambda raw: {"ops": 0.700, "obp": 0.30, "slg": 0.40, "plate_appearances": 10})
-
-    first = mod.ingest_season(2024)
-    assert first["ok"] == 4
-    assert call_count["n"] == 4
-
-    second = mod.ingest_season(2024)
-    assert second["attempted"] == 0
-    assert second["already_had"] == 4
-    assert call_count["n"] == 4  # no llamadas nuevas
-
-    third = mod.ingest_season(2024, force=True)
-    assert third["attempted"] == 4
-    assert call_count["n"] == 8
+    team_100_calls = [c for c in calls if c[0] == 100]
+    # 1 llamada por fecha jugada (no 2 por mano, a diferencia de la
+    # version Camino 1) -- 2 fechas para el equipo 100.
+    assert len(team_100_calls) == 2
+    assert {c[1] for c in team_100_calls} == {"2024-04-10", "2024-04-15"}
 
 
-def test_errors_recorded_without_crashing(monkeypatch, memory_session_local):
-    monkeypatch.setattr(mod, "get_games_for_season", lambda season: _games())
-    monkeypatch.setattr(mod, "get_team_hitting_split_by_date_range", lambda *a, **k: None)
-    monkeypatch.setattr(mod, "parse_team_hitting_split", lambda raw: None)
+def test_unknown_opponent_hand_does_not_crash_and_leaves_split_unaccumulated(monkeypatch, memory_session_local):
+    lines = {(200, "2024-04-10"): _LINE_GAME1, (200, "2024-04-15"): _LINE_GAME1}
+    # home_pitcher_id es None en ambos juegos -- el rival del equipo 200
+    # nunca se resuelve.
+    _patch_common(monkeypatch, lines, hands={1: "R", 2: "L"})
 
     result = mod.ingest_season(2024)
-    assert result["ok"] == 0
-    assert result["errors"] == 4
+    # El equipo 100 tambien se procesa (misma temporada) pero no tiene
+    # lineas mockeadas -- solo verificamos que el equipo 200 (sin mano
+    # de rival resuelta) no explota y queda sin acumular.
+    assert result["daily_fetch_errors"] >= 0
+
+    with memory_session_local() as session:
+        rows = session.query(HandednessSplitSnapshot).filter_by(team_id=200).all()
+    assert all(r.ops is None for r in rows)
+
+
+def test_skips_teams_already_done_without_force_and_recomputes_with_force(monkeypatch, memory_session_local):
+    lines = {(100, "2024-04-10"): _LINE_GAME1, (100, "2024-04-15"): _LINE_GAME1}
+    calls = _patch_common(monkeypatch, lines, hands={1: "R", 2: "L"})
+
+    first = mod.ingest_season(2024)
+    assert first["teams_processed"] == 2  # equipos 100 y 200
+    n_calls_after_first = len(calls)
+    assert n_calls_after_first > 0
+
+    second = mod.ingest_season(2024)
+    assert second["teams_processed"] == 0
+    assert second["teams_skipped_already_done"] == 2
+    assert len(calls) == n_calls_after_first  # sin llamadas nuevas
+
+    third = mod.ingest_season(2024, force=True)
+    assert third["teams_processed"] == 2
+    assert len(calls) == n_calls_after_first * 2
+
+
+def test_fetch_error_recorded_without_crashing(monkeypatch, memory_session_local):
+    _patch_common(monkeypatch, lines={}, hands={1: "R", 2: "L"})
+
+    result = mod.ingest_season(2024)
+    # Ninguna fecha tiene linea disponible en el dict `lines` -- todas
+    # las llamadas "fallan" (devuelven None).
+    assert result["daily_fetch_errors"] == result["daily_fetches"]
+    assert result["daily_fetches"] > 0

@@ -1,13 +1,23 @@
 name: ingest_handedness_splits
 
 # workflow_dispatch manual. Escribe SOLO en el schema propio
-# (handedness_split_snapshot, team_strength). Costo estimado ~45,000
-# llamadas a MLB Stats API (2 manos x ~150 fechas x 30 equipos x 5
-# temporadas), a ~30ms cada una segun el spike real -- del orden de
-# minutos con 8 workers en paralelo. Se dispara con confirmacion
-# explicita del usuario.
+# (handedness_split_snapshot, team_strength). Camino 2 (dia-por-dia,
+# 2026-07-20 -- ver docs/data_source_design.md): 1 llamada por
+# equipo-fecha jugada (~24,300 en total, ~150 fechas x 30 equipos x 5
+# temporadas) mas la resolucion de mano de cada pitcher rival -- mas
+# barato que la version anterior (Camino 1, ahora confirmada rota).
+# Se dispara con confirmacion explicita del usuario.
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: >-
+          Recalcular TODO desde cero, incluso equipos que ya tengan
+          filas (necesario la primera vez que se corre despues de
+          migrar de Camino 1 a Camino 2 -- los datos viejos estan
+          contaminados por el bug de sitCodes+byDateRange).
+        type: boolean
+        default: true
 
 jobs:
   ingest:
@@ -19,6 +29,6 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements.txt
-      - run: python scripts/ingest_handedness_splits.py
+      - run: python scripts/ingest_handedness_splits.py ${{ inputs.force && '--force' || '' }}
         env:
           JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}

@@ -106,15 +106,19 @@ def main() -> int:
     with_split = sum(1 for g in games if g["home_ops_vs_away_hand"] is not None or g["away_ops_vs_home_hand"] is not None)
     print(f"Juegos con al menos 1 split especifico resuelto: {with_split}/{len(games)}", file=sys.stderr)
 
-    # DIAGNOSTICO: comparar el split especifico contra el OPS general para
-    # una muestra -- si son identicos en la muestra, la sustitucion no esta
-    # aportando nada (bug de datos), no "sin señal real".
-    sample = [g for g in games if g["home_ops_vs_away_hand"] is not None][:10]
-    for g in sample:
-        general = g["payload"].get("home_ops")
-        specific = g["home_ops_vs_away_hand"]
-        print(f"  DEBUG home_ops general={general} vs especifico={specific} "
-              f"(iguales={general == specific})", file=sys.stderr)
+    # Chequeo de cordura post-fix (2026-07-20): la corrida real con la
+    # ingesta Camino 1 (rota, ver docs/data_source_design.md) dio
+    # delta_brier=0.0 EXACTO porque el split "especifico" resultaba
+    # identico al OPS general en el 100% de la muestra -- sitCodes no
+    # tenia efecto combinado con byDateRange. Con Camino 2 (dia-por-dia)
+    # eso ya no deberia pasar; si vuelve a pasar, hay un bug NUEVO, no
+    # el mismo de antes.
+    sample = [g for g in games if g["home_ops_vs_away_hand"] is not None][:50]
+    identical = sum(1 for g in sample if g["payload"].get("home_ops") == g["home_ops_vs_away_hand"])
+    if sample and identical == len(sample):
+        print(f"  ADVERTENCIA: {identical}/{len(sample)} splits especificos identicos al OPS "
+              f"general -- posible regresion del bug de sitCodes+byDateRange, revisar antes "
+              f"de confiar en el resultado.", file=sys.stderr)
 
     print("Evaluando M1 (bootstrap CI 500 resamples)...", file=sys.stderr)
     result = evaluate_m1(games, n_resamples=config.BOOTSTRAP_RESAMPLES)

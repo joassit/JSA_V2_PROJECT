@@ -74,9 +74,16 @@ escalado a 5/9 entradas) vs. proxy ingenuo (fórmula de juego completo).
 `Δbrier=-0.00165` (CI `[-0.00248,-0.00072]`, significativo, por encima
 del umbral) -- **segundo resultado positivo real** de esta sesión.
 
-**M1 (Matchup por mano)**: splits vs. LHP/RHP ingeridos point-in-time
-(44,382/51,242 exitosos, ~87%). Candidate audit en curso/pendiente de
-reportar -- ver `docs/data_source_design.md`.
+**M1 (Matchup por mano) -- bug real encontrado y corregido (2026-07-20)**:
+la primera ingesta (Camino 1: 1 llamada por equipo/fecha CON `sitCodes`)
+dio `delta_brier=0.0` exacto -- imposible por azar. Diagnóstico en vivo
+confirmó que `sitCodes` no tiene ningún efecto combinado con
+`stats=byDateRange` (ni siquiera en ventanas de 1 día) -- limitación real
+de la API de MLB, no un bug de este código. Migrado a Camino 2
+(reconstrucción día-por-día, clasificación por mano hecha en Python) --
+ver `docs/data_source_design.md`, sección "CORRECCIÓN 2026-07-20". Los
+datos viejos están contaminados y se están reemplazando por completo.
+Candidate audit real pendiente de correr con los datos corregidos.
 
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`

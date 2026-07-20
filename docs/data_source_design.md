@@ -206,6 +206,41 @@ Corrida real desde GitHub Actions (runs
   minutos en paralelo (mismo patrón `ThreadPoolExecutor` que ya usa
   `data/stats.py::get_bullpen_era()` en el proyecto legado), no horas.
 
+### CORRECCIÓN 2026-07-20 (post-ingesta real): Camino 1 estaba roto -- sitCodes no compone con byDateRange
+
+El spike original (arriba) NUNCA comparó `vl` contra `vr` dentro de la
+MISMA ventana de fechas -- solo varió la fecha con un `sitCode` fijo, y
+concluyó "Camino 1 viable" de eso. Fue un gap real en la verificación.
+
+La primera ingesta real con Camino 1 (44,382/51,242 filas) produjo un
+candidate audit de M1 con `delta_brier_mean=0.0` EXACTO y
+`auc_model==auc_baseline` a precisión de punto flotante completa (run
+[29715848018](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715848018))
+-- estadísticamente imposible por azar en 13,101 juegos. El debug mostró
+que el OPS "específico" (vs. mano) resultaba IDÉNTICO al OPS general en
+10/10 muestras.
+
+Diagnóstico dedicado ([29716014513](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29716014513),
+[29716111744](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29716111744),
+`scripts/diagnose_sitcodes_bydaterange.py`) confirmó la causa raíz:
+**`sitCodes` no tiene NINGÚN efecto combinado con `stats=byDateRange`**
+-- `vl`, `vr` y sin `sitCodes` devuelven resultados IDÉNTICOS, incluso en
+una ventana de un solo día (mismos conteos crudos: 6 hits, 36 AB, etc.).
+`stats=byDateRangeAdvanced` no existe (404). No hay combinación de
+parámetros que resuelva esto barato -- limitación real y no documentada
+de la API pública de MLB.
+
+**Camino 1 queda descartado.** Se migró a Camino 2 (reconstrucción
+día-por-día, ver abajo) -- `scripts/ingest_handedness_splits.py` y
+`data_sources/mlb_api.py::get_team_hitting_by_date()` reescritos para
+traer la línea de bateo cruda de cada fecha jugada (sin `sitCodes`, se
+ignora igual) y clasificarla nosotros mismos por la mano del abridor
+rival de ESE juego, acumulando en Python. Costo real: 1 llamada por
+equipo-fecha (no 2 por mano como Camino 1) -- termina siendo MÁS barato,
+no más caro. Las 44,382 filas de la primera ingesta están contaminadas
+(el "split" nunca estuvo separado por mano) y se reemplazan por completo
+(`--force`) en la re-ingesta.
+
 ### El problema point-in-time (el mismo que ya resolvió `jsa/` para ERA/OPS)
 
 `stats=season` con `sitCodes` devuelve el acumulado **a la fecha de hoy**,

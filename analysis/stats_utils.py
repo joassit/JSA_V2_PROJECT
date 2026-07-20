@@ -13,6 +13,23 @@ import random
 import numpy as np
 
 
+def ops_from_raw_counts(ab: int, h: int, bb: int, hbp: int, sf: int, tb: int) -> float | None:
+    """
+    OPS = OBP + SLG a partir de conteos crudos acumulados -- necesario
+    porque `sitCodes` no tiene efecto combinado con `stats=byDateRange`
+    (confirmado en vivo, ver scripts/diagnose_sitcodes_bydaterange.py),
+    asi que la clasificacion por mano del lanzador rival y la acumulacion
+    dia-por-dia se hacen en este codigo, no en la API (Camino 2 de
+    docs/data_source_design.md). None si no hay muestra suficiente (AB=0).
+    """
+    denom_obp = ab + bb + hbp + sf
+    if ab <= 0 or denom_obp <= 0:
+        return None
+    obp = (h + bb + hbp) / denom_obp
+    slg = tb / ab
+    return obp + slg
+
+
 def brier_score(probs: list[float], actuals: list[int]) -> float | None:
     """Promedio de (prob - resultado_real)^2. None si no hay datos.
     0.0 = perfecto, 0.25 = tan bueno como decir 50% siempre."""
