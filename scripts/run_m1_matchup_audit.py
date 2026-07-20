@@ -106,6 +106,16 @@ def main() -> int:
     with_split = sum(1 for g in games if g["home_ops_vs_away_hand"] is not None or g["away_ops_vs_home_hand"] is not None)
     print(f"Juegos con al menos 1 split especifico resuelto: {with_split}/{len(games)}", file=sys.stderr)
 
+    # DIAGNOSTICO: comparar el split especifico contra el OPS general para
+    # una muestra -- si son identicos en la muestra, la sustitucion no esta
+    # aportando nada (bug de datos), no "sin señal real".
+    sample = [g for g in games if g["home_ops_vs_away_hand"] is not None][:10]
+    for g in sample:
+        general = g["payload"].get("home_ops")
+        specific = g["home_ops_vs_away_hand"]
+        print(f"  DEBUG home_ops general={general} vs especifico={specific} "
+              f"(iguales={general == specific})", file=sys.stderr)
+
     print("Evaluando M1 (bootstrap CI 500 resamples)...", file=sys.stderr)
     result = evaluate_m1(games, n_resamples=config.BOOTSTRAP_RESAMPLES)
 
