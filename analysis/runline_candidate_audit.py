@@ -203,6 +203,33 @@ def evaluate_rl1b_calibrated(
     }
 
 
+# --- RL1-Platt ADOPTADO (autorizado explicitamente por el usuario, 2026-07-21) ---
+# Calibracion logistica ajustada sobre las 5 temporadas COMPLETAS
+# (13,101 juegos, sin excluir ninguna). A diferencia de T1/ML1 (donde el
+# shrinkage lineal de 1 parametro ya bastaba), aca Platt es la MEJOR de
+# las 3 variantes: delta_brier=-0.01260 vs. baseline (CI
+# [-0.01436,-0.01072], significativo) Y delta_brier=-0.00465 vs. RL1b
+# lineal (significativo) -- Platt le gana tambien a la version lineal, no
+# solo al baseline. Ver docs/data_source_design.md, "Resultado real de
+# RL1/RL1b/RL1-Platt".
+RL1_PLATT_ADOPTED_A = 0.15210344440371978
+RL1_PLATT_ADOPTED_B = -0.4420859447827888
+
+
+def predict_runline_home_covers_prob(payload: dict) -> float | None:
+    """
+    Formula ADOPTADA de Run Line (RL1-Platt): project_runs_pair() (peso
+    estandar) -> home_covers_prob() (P(home cubre -1.5)) ->
+    platt_calibrate(a=RL1_PLATT_ADOPTED_A, b=RL1_PLATT_ADOPTED_B). P(el
+    LOCAL cubre -1.5, gana por 2+ carreras). None si el payload no
+    permite proyectar.
+    """
+    p_raw = project_home_covers_prob(payload)
+    if p_raw is None:
+        return None
+    return platt_calibrate([p_raw], RL1_PLATT_ADOPTED_A, RL1_PLATT_ADOPTED_B)[0]
+
+
 def evaluate_rl1_platt_calibrated(
     games: list[dict], n_resamples: int = 500, seed: int = 20260721,
 ) -> dict:

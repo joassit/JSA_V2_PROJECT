@@ -1,0 +1,20 @@
+name: feasibility_spike_open_meteo
+
+# workflow_dispatch manual. Solo lectura contra api.open-meteo.com (sin
+# API key, sin costo) -- verifica si el pronostico de temperatura esta
+# disponible para una ubicacion y fecha reales antes de comprometerse a
+# integrarlo. Sin DB, sin secrets.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  spike:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - run: python scripts/feasibility_spike_open_meteo.py

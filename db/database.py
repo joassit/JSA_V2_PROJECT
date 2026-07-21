@@ -180,6 +180,30 @@ class ParkFactor(Base):
     )
 
 
+class WeatherSnapshot(Base):
+    """
+    Clima real registrado por MLB Stats API para un juego -- SOLO
+    disponible una vez que el juego ocurre o esta en curso (confirmado
+    en vivo, ver scripts/feasibility_spike_weather.py: un juego
+    programado de hoy trae `gameData.weather={}`, vacio). Insumo
+    historico para probar si la temperatura mejora T1b (Totales) mas
+    alla de lo que ya predice, ver analysis/weather_candidate_audit.py.
+    """
+    __tablename__ = "weather_snapshot"
+
+    game_pk: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    temp_f: Mapped[float | None] = mapped_column(Float)
+    condition: Mapped[str | None] = mapped_column(String)
+    wind_raw: Mapped[str | None] = mapped_column(String)
+
+    source: Mapped[str] = mapped_column(String, default="mlb_stats_api_feed_live")
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class PitcherMatchupFeature(Base):
     """
     Feature point-in-time-safe por juego: OPS del lineup rival contra la

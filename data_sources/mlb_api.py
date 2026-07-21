@@ -413,3 +413,69 @@ def parse_era_ip_from_season_stats(payload: dict) -> tuple[float, float] | None:
     except (KeyError, IndexError, TypeError, ValueError) as e:
         logger.warning(f"No se pudo parsear ERA/IP de season stats: {e}")
         return None
+
+
+# --- Clima -- ver docs/data_source_design.md, "Resultado real de
+# Weather1". MLB Stats API SOLO registra clima real DESPUES de que el
+# juego ocurre (confirmado en vivo, scripts/feasibility_spike_weather.py)
+# -- estas 2 funciones son para el HISTORICO (ingesta point-in-time-safe
+# porque el juego ya paso). Para clima de juegos FUTUROS ver
+# get_forecast_temperature() (Open-Meteo) mas abajo.
+
+def get_game_weather_raw(game_pk: int, timeout: int = 15) -> dict | None:
+    """JSON crudo de /feed/live (v1.1) -- unico endpoint con gameData.weather."""
+    try:
+        resp = _session.get(f"{config.MLB_API_BASE_V11}/game/{game_pk}/feed/live", timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener el clima del juego {game_pk}: {e}")
+        return None
+
+
+def parse_weather(payload: dict) -> dict | None:
+    """{'temp_f', 'condition', 'wind_raw'} o None si no hay clima real
+    (dict vacio {} -- juego aun no jugado, ver spike de factibilidad)."""
+    weather = (payload.get("gameData") or {}).get("weather") or {}
+    temp = weather.get("temp")
+    if temp is None:
+        return None
+    try:
+        temp_f = float(temp)
+    except (TypeError, ValueError):
+        return None
+    return {"temp_f": temp_f, "condition": weather.get("condition"), "wind_raw": weather.get("wind")}
+
+
+def get_forecast_temperature(latitude: float, longitude: float, target_date: str, timeout: int = 15) -> float | None:
+    """
+    Temperatura pronosticada (°F) para una fecha/ubicacion -- Open-Meteo,
+    gratuita, sin API key (confirmado en vivo,
+    scripts/feasibility_spike_open_meteo.py). Promedio del pronostico
+    horario entre las 18:00 y 21:00 hora local del estadio (horario tipico
+    de primer pitch de MLB) -- aproximacion simple, no especifica el
+    horario exacto del juego (eso requeriria cruzar con el horario real
+    del calendario, fuera de alcance de esta primera version).
+    """
+    try:
+        resp = _session.get(
+            config.OPEN_METEO_BASE,
+            params={
+                "latitude": latitude, "longitude": longitude,
+                "hourly": "temperature_2m", "temperature_unit": "fahrenheit",
+                "start_date": target_date, "end_date": target_date,
+                "timezone": "auto",
+            },
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        hourly = payload.get("hourly") or {}
+        times, temps = hourly.get("time") or [], hourly.get("temperature_2m") or []
+        evening = [t for time_str, t in zip(times, temps) if time_str.endswith(("18:00", "19:00", "20:00", "21:00"))]
+        if not evening:
+            return None
+        return sum(evening) / len(evening)
+    except (requests.RequestException, ValueError, KeyError) as e:
+        logger.warning(f"No se pudo obtener el pronostico de clima ({latitude},{longitude},{target_date}): {e}")
+        return None

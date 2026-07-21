@@ -18,6 +18,17 @@ import os
 # MLB Stats API -- misma API oficial gratuita que ya usa el resto del
 # ecosistema (mlb_edge_analyzer.v2/jsa). Sin API key.
 MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
+# v1.1 -- unico endpoint donde MLB expone gameData.weather (confirmado en
+# vivo, ver scripts/feasibility_spike_weather.py; /api/v1/.../boxscore
+# NUNCA trae clima, solo el feed completo en v1.1 lo tiene).
+MLB_API_BASE_V11 = "https://statsapi.mlb.com/api/v1.1"
+
+# API de pronostico de clima -- Open-Meteo, gratuita, sin API key (ver
+# scripts/feasibility_spike_open_meteo.py). Necesaria porque MLB Stats
+# API SOLO registra clima real DESPUES de que el juego ocurre (confirmado
+# en vivo) -- inutil para proyecciones de juegos futuros sin esta fuente
+# externa.
+OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 
 # Temporadas cubiertas por el historico ya validado en jsa/ (13,101
 # juegos). Cualquier ingesta de este proyecto debe restringirse a este

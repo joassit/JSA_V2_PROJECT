@@ -4,14 +4,18 @@ import pytest
 
 from analysis.runline_candidate_audit import (
     ALPHA_CANDIDATES,
+    RL1_PLATT_ADOPTED_A,
+    RL1_PLATT_ADOPTED_B,
     RUN_LINE_MARGIN,
     baseline_home_covers_prob,
     evaluate_rl1,
     evaluate_rl1_platt_calibrated,
     evaluate_rl1b_calibrated,
     home_covers_prob,
+    predict_runline_home_covers_prob,
     project_home_covers_prob,
 )
+from analysis.stats_utils import platt_calibrate
 
 
 def test_run_line_margin_is_standard_mlb_value():
@@ -109,3 +113,18 @@ def test_evaluate_rl1_platt_returns_expected_keys():
 
 def test_alpha_candidates_include_uncalibrated_case():
     assert 1.0 in ALPHA_CANDIDATES
+
+
+def test_predict_runline_home_covers_prob_matches_manual_pipeline():
+    payload = {
+        "league_avg_runs_per_game": 4.5, "league_avg_ops": 0.750, "league_avg_era": 4.30,
+        "park_factor": 1.0, "home_ops": 0.780, "away_ops": 0.720,
+    }
+    expected = platt_calibrate(
+        [project_home_covers_prob(payload)], RL1_PLATT_ADOPTED_A, RL1_PLATT_ADOPTED_B,
+    )[0]
+    assert predict_runline_home_covers_prob(payload) == pytest.approx(expected)
+
+
+def test_predict_runline_home_covers_prob_none_when_payload_empty():
+    assert predict_runline_home_covers_prob({}) is None

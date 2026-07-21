@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from analysis.first5_candidate_audit import predict_first5_home_win_prob
 from analysis.live_snapshot import aggregate_bullpen_era, compute_league_averages
 from analysis.moneyline_candidate_audit import predict_moneyline_home_win_prob
+from analysis.runline_candidate_audit import RUN_LINE_MARGIN, predict_runline_home_covers_prob
 from analysis.totals_candidate_audit import TOTALS_LINE, predict_totals_over_prob
 from data_sources.mlb_api import (
     get_pitcher_era_season, get_schedule_with_probables, get_team_active_roster,
@@ -150,6 +151,8 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
             "totals_over_prob": predict_totals_over_prob(payload),
             "first5_home_win_prob": predict_first5_home_win_prob(payload),
             "moneyline_home_win_prob": predict_moneyline_home_win_prob(payload),
+            "run_line_margin": RUN_LINE_MARGIN,
+            "runline_home_covers_prob": predict_runline_home_covers_prob(payload),
             "payload": payload,
         })
 
