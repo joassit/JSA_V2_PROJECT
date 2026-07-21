@@ -678,12 +678,15 @@ productización (si se decide) es una decisión aparte.
 
 ### Qué falta por integrar (2026-07-21, tras adoptar ML1b)
 
-1. **Verificación en vivo de `moneyline_home_win_prob`**: la corrida real
-   confirmada (15 juegos, sección anterior) fue ANTES de agregar ML1b al
-   orquestador -- el campo nuevo se agregó al código pero todavía no se
-   dispachó `build_live_projections.yml` con él incluido. Es el único
-   paso estrictamente pendiente para cerrar el mismo ciclo
-   spike→implementar→verificar en vivo que se siguió con T1b/F1.
+1. ~~Verificación en vivo de `moneyline_home_win_prob`~~ -- **✅ resuelto**
+   (run [29854712628](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29854712628),
+   `conclusion=success`): el campo aparece en los 15 juegos del calendario
+   real sin errores, ej. `game_pk=824005` (`home_team_id=108`,
+   `away_team_id=138`): `moneyline_home_win_prob=0.543`, consistente con
+   `first5_home_win_prob=0.599` (mismo signo, magnitud distinta porque son
+   ventanas de juego diferentes) y con el abridor local (`home_starter_xera=2.88`)
+   claramente mejor que el visitante (`away_starter_xera=5.0`). Cierra el
+   mismo ciclo spike→implementar→verificar en vivo que T1b/F1.
 2. **Árbol de "Estructura" en README.md desactualizado**: lista solo los
    archivos de la primera iteración (T1, `feasibility_spike.py`) -- no
    refleja `analysis/{first5,matchup,chase_rate,closer_era,park_factor,

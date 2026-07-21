@@ -180,8 +180,10 @@ sin errores -- ej. Cleveland Guardians @ Minnesota Twins:
 `home_starter_xera=2.73` (Parker Messick), `park_factor=0.894`. Ver
 `.github/workflows/build_live_projections.yml` (`workflow_dispatch`, con
 fecha opcional). No persiste proyecciones -- imprime JSON a stdout.
-`moneyline_home_win_prob` se agregó al mismo orquestador el 2026-07-21,
-pendiente de una nueva corrida de verificación en vivo.
+`moneyline_home_win_prob` se agregó al mismo orquestador el 2026-07-21 y
+se verificó en una segunda corrida real ese mismo día (run
+[29854712628](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29854712628)) --
+los 3 campos (T1b, F1, ML1b) funcionan juntos end-to-end sin errores.
 
 ## Estructura
 
