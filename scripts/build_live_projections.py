@@ -3,8 +3,11 @@ Orquestador de proyecciones EN VIVO (juegos futuros) -- arma el payload de
 cada juego del dia (o de una fecha dada) con datos "a hoy" (OPS de
 temporada, ERA del abridor probable, ERA de bullpen ponderado por IP del
 roster activo, park factor ya calculado por scripts/compute_park_factors.py)
-y aplica las 2 formulas ADOPTADAS (T1b, F1) -- ver
-docs/data_source_design.md, "Proyecciones en vivo".
+y aplica las 3 formulas ADOPTADAS (T1b, F1, ML1b) -- ver
+docs/data_source_design.md, "Proyecciones en vivo". ML1b tiene una
+advertencia de alcance propia (no vence al mercado real, ver
+analysis/moneyline_candidate_audit.py) -- se incluye igual, adoptada por
+pedido explicito del usuario.
 
 Distinto de todo lo point-in-time historico de este proyecto: "hoy" ya ES
 el corte, no hace falta reconstruir nada dia por dia -- stats=season de la
@@ -28,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analysis.first5_candidate_audit import f1_first5_win_prob
 from analysis.live_snapshot import aggregate_bullpen_era, compute_league_averages
+from analysis.moneyline_candidate_audit import predict_moneyline_home_win_prob
 from analysis.totals_candidate_audit import TOTALS_LINE, predict_totals_over_prob
 from data_sources.mlb_api import (
     get_pitcher_era_season, get_schedule_with_probables, get_team_active_roster,
@@ -145,6 +149,7 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
             "totals_line": TOTALS_LINE,
             "totals_over_prob": predict_totals_over_prob(payload),
             "first5_home_win_prob": f1_first5_win_prob(payload),
+            "moneyline_home_win_prob": predict_moneyline_home_win_prob(payload),
             "payload": payload,
         })
 

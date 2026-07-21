@@ -320,6 +320,77 @@ producción es correr `scripts/feasibility_spike.py` desde un workflow de
 GitHub Actions (red real, mismo patrón que usó `jsa/` para validar
 Statcast antes de construir `statcast_ingestion.py`).
 
+## Resultado real de ML1/ML1b (Moneyline) -- 2026-07-21, ✅ ADOPTADO con advertencia
+
+Pedido explícito del usuario ("Usa el protocolo de validación y me vuelves
+a dar") para someter la proyección de ganador de juego completo (9
+entradas) al mismo protocolo. **Nota de alcance, distinta de M1/M2/M3**:
+esta hipótesis reutiliza las MISMAS variables base que `project_runs_pair()`
+ya usa (OPS, ERA de abridor/bullpen, park factor) -- las mismas que el
+modelo Skellam de producción de `jsa/` ya usa para Moneyline. No hay dato
+genuinamente nuevo; se corrió porque el usuario lo pidió de forma
+explícita, no porque cumpliera el criterio de alcance original de este
+proyecto.
+
+Corrida real (`moneyline_candidate_audit.yml`, run
+[29847772308](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29847772308)),
+mismos 13,101 juegos (12,965 con cobertura, 98.96%). `moneyline_win_prob()`
+usa Skellam(mu_home, mu_away) **renormalizado excluyendo la probabilidad
+de empate** (un juego de 9 entradas nunca puede terminar empatado, a
+diferencia de F5) sobre `project_runs_pair()` con el peso estándar de
+juego completo (no el 0.90 específico de F5). Baseline: ventaja de
+localía fija de 0.54 (cifra externa, no derivada de este dataset -- mismo
+criterio que el baseline de T1).
+
+| Temporada excluida | Alpha elegido (en las otras 4) |
+|---|---|
+| 2022 | 0.2 |
+| 2023 | 0.2 |
+| 2024 | 0.2 |
+| 2025 | 0.2 |
+| 2026 | 0.2 |
+
+**`alpha=0.2` óptimo en las 5 temporadas SIN EXCEPCIÓN -- idéntico al de
+T1b.**
+
+| Métrica | ML1 crudo | ML1b calibrado (LOSO) | Baseline (localía fija 0.54) |
+|---|---|---|---|
+| Brier | 0.27700 | **0.24762** | 0.24891 |
+| AUC | 0.5535 | 0.5535 (invariante a la calibración) | 0.5000 |
+
+ML1 crudo: `Δbrier=+0.02809` (CI `[0.02394, 0.03190]`, significativo, pero
+en la dirección MALA) -- mismo patrón "ordena bien, calibra mal" que T1
+crudo (AUC=0.5535 > 0.5 del baseline, pero probabilidades demasiado
+extremas). **No pasa.**
+
+ML1b calibrado: `delta_brier_mean = -0.00129` (CI `[-0.00223, -0.00031]`,
+**significativo**, `|Δ|=0.00129 >= 0.001`) -- **las 3 condiciones
+formales se cumplen.**
+
+**Advertencia que se mantiene pese a la adopción formal**: el baseline
+(0.54 fijo) es un piso deliberadamente bajo, sin ninguna señal de equipo.
+El Brier resultante de ML1b (0.2476) **NO le gana al mercado real**
+(0.2431, según el reporte técnico oficial de `jsa/` del 2026-07-20) y cae
+**dentro del mismo rango** que el modelo Skellam ya en producción de
+`jsa/` (0.2466-0.2555). En otras palabras: pasar el protocolo interno de
+este proyecto contra un baseline débil demuestra que la calibración
+(`alpha=0.2`) recupera aproximadamente lo que `jsa/` ya logra -- no que
+este proyecto descubrió una mejora nueva para Moneyline. A diferencia de
+T1b/F1 (donde no existía nada previo para ese mercado específico), aquí sí
+existe un modelo de producción real para comparar, y ML1b no lo supera.
+
+**✅ ADOPTADO -- autorización explícita del usuario, 2026-07-21**, con
+esta advertencia documentada en el código (`analysis/moneyline_candidate_audit.py`)
+y en cada lugar donde se usa. Fórmula final:
+`analysis.moneyline_candidate_audit.predict_moneyline_home_win_prob(payload)`
+-- `project_runs_pair()` (peso estándar) → `moneyline_win_prob()`
+(Skellam renormalizado) → `calibrate_prob(alpha=ML1B_ADOPTED_ALPHA=0.2)`.
+Integrada al orquestador de proyecciones en vivo
+(`scripts/build_live_projections.py`, campo `moneyline_home_win_prob`) el
+mismo día -- pendiente de una corrida de verificación en vivo con
+calendario real (la corrida confirmada del 2026-07-21 fue anterior a esta
+integración).
+
 ## Línea 1 -- Matchup Pitcher vs Lineup por mano (LHP/RHP)
 
 ### Qué se prueba
@@ -574,9 +645,12 @@ respaldo (`LEAGUE_AVG_ERA=4.30`, `LEAGUE_OPS_FALLBACK=0.750`).
 5. Arma el payload por juego (`home_ops`, `away_ops`,
    `home/away_starter_xera`, `home/away_bullpen_era`, `league_avg_era`,
    `league_avg_ops`, `park_factor`) y aplica `predict_totals_over_prob()`
-   (T1b) y `f1_first5_win_prob()` (F1). No persiste nada -- imprime JSON.
+   (T1b), `f1_first5_win_prob()` (F1) y `predict_moneyline_home_win_prob()`
+   (ML1b, campo `moneyline_home_win_prob`, agregado 2026-07-21 --
+   advertencia de alcance vigente, ver "Resultado real de ML1/ML1b": no
+   vence al mercado real). No persiste nada -- imprime JSON.
 
-### Corrida real confirmada (2026-07-21)
+### Corrida real confirmada (2026-07-21, T1b + F1)
 
 `build_live_projections.yml` (`workflow_dispatch`, sin `--date` = hoy),
 `conclusion=success`, 35s totales (6s del script). **15 juegos del
@@ -589,7 +663,10 @@ conocidos), `totals_over_prob` ∈ [0.43, 0.59], `first5_home_win_prob` ∈
 entre juegos, no colapsa a ~0.5 parejo). 3 abridores sin ERA/IP parseable
 (pitchers sin apariciones aún esta temporada, `None` propagado
 correctamente, sin romper el pipeline -- el fallback de
-`project_runs_pair()` cubre esos casos). Ejemplo real: Cleveland Guardians
+`project_runs_pair()` cubre esos casos). `moneyline_home_win_prob` se
+integró al orquestador DESPUÉS de esta corrida -- todavía no tiene su
+propia verificación en vivo con calendario real (pendiente, ver "Qué
+falta por integrar" más abajo). Ejemplo real: Cleveland Guardians
 @ Minnesota Twins (`game_pk=824409`), abridor local Parker Messick
 (`home_starter_xera=2.73`), `park_factor=0.894` (Target Field, algo
 pitcher-friendly), `totals_over_prob=0.430`, `first5_home_win_prob=0.370`.
@@ -598,6 +675,35 @@ pitcher-friendly), `totals_over_prob=0.430`, `first5_home_win_prob=0.370`.
 propia, exponerlas via API/UI, o correr el orquestador en un cron
 automático -- este pipeline demuestra factibilidad end-to-end, la
 productización (si se decide) es una decisión aparte.
+
+### Qué falta por integrar (2026-07-21, tras adoptar ML1b)
+
+1. **Verificación en vivo de `moneyline_home_win_prob`**: la corrida real
+   confirmada (15 juegos, sección anterior) fue ANTES de agregar ML1b al
+   orquestador -- el campo nuevo se agregó al código pero todavía no se
+   dispachó `build_live_projections.yml` con él incluido. Es el único
+   paso estrictamente pendiente para cerrar el mismo ciclo
+   spike→implementar→verificar en vivo que se siguió con T1b/F1.
+2. **Árbol de "Estructura" en README.md desactualizado**: lista solo los
+   archivos de la primera iteración (T1, `feasibility_spike.py`) -- no
+   refleja `analysis/{first5,matchup,chase_rate,closer_era,park_factor,
+   live_snapshot,moneyline}_candidate_audit.py`, `data_sources/mlb_api.py`,
+   ni ninguno de los scripts de M1-M3/park factor/vivo/moneyline. Deuda de
+   documentación, no bloquea nada funcional.
+3. **Decisión de producto pendiente, no solo técnica**: `moneyline_home_win_prob`
+   ahora aparece en el mismo JSON que `totals_over_prob` y
+   `first5_home_win_prob`, pero a diferencia de esos dos (mejoras
+   genuinas sobre lo que existía), ML1b solo iguala aproximadamente el
+   modelo Skellam ya en producción de `jsa/` y no vence al mercado. Vale
+   la pena que el usuario revise si quiere que los 3 campos convivan con
+   el mismo nivel de confianza implícita en el output, o si
+   `moneyline_home_win_prob` debería marcarse de alguna forma como
+   "referencial" en el JSON -- no se tomó esa decisión unilateralmente
+   aquí, ver `predict_moneyline_home_win_prob()` para el disclaimer en el
+   código.
+4. **`candidate_audit_result`** ya tiene ambas filas (ML1 crudo + ML1b
+   calibrado) persistidas por `scripts/run_moneyline_candidate_audit.py`
+   (`run_id=ml1-moneyline-20260721T161545-1278d8c1`) -- sin pendientes ahí.
 
 ## Prioridad recomendada
 

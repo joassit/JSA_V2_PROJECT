@@ -67,6 +67,40 @@ def project_home_win_prob(payload: dict) -> float | None:
     return moneyline_win_prob(mu_home, mu_away)
 
 
+# --- ML1b ADOPTADO (autorizado explicitamente por el usuario, 2026-07-21) ---
+# alpha=0.2 fue optimo en las 5 temporadas SIN excepcion via LOSO real
+# (identico al alpha de T1b) -- delta_brier_mean=-0.00129 (CI
+# [-0.00223,-0.00031], significativo, |delta|>=0.001, las 3 condiciones
+# formales se cumplen). ADVERTENCIA de alcance que sigue vigente pese a la
+# adopcion: el baseline es una ventaja de localia FIJA (0.54, sin señal de
+# equipo) -- un piso bajo. El Brier resultante (0.2476) NO le gana al
+# mercado real (0.2431, ver reporte tecnico de jsa/ 2026-07-20) y cae
+# dentro del mismo rango que el modelo Skellam YA en produccion de jsa/
+# (0.2466-0.2555) -- esta formula iguala aproximadamente lo que ya existe
+# en el ecosistema, no aporta una mejora nueva sobre el estado del arte
+# real (el mercado). Adoptada de todas formas por pedido explicito del
+# usuario, documentada con esta advertencia en cada lugar donde se usa.
+ML1B_ADOPTED_ALPHA = 0.2
+
+
+def predict_moneyline_home_win_prob(payload: dict) -> float | None:
+    """
+    Formula ADOPTADA de Moneyline (ML1b): project_runs_pair() (peso
+    estandar de 9 entradas) -> moneyline_win_prob() (Skellam renormalizado
+    sin empate) -> calibrate_prob(alpha=ML1B_ADOPTED_ALPHA). P(el LOCAL
+    gana el juego completo). None si el payload no permite proyectar.
+
+    Ver la nota de alcance en ML1B_ADOPTED_ALPHA: pasa el protocolo de 3
+    condiciones contra el baseline de este proyecto, pero no vence al
+    mercado real ni mejora sobre el modelo ya existente de jsa/ -- usar
+    con esa expectativa correcta, no como una ventaja nueva descubierta.
+    """
+    p_raw = project_home_win_prob(payload)
+    if p_raw is None:
+        return None
+    return calibrate_prob(p_raw, ML1B_ADOPTED_ALPHA)
+
+
 def _prepare_series(games: list[dict]) -> dict:
     model_raw_probs, actuals, seasons = [], [], []
     for g in games:

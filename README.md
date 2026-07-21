@@ -119,6 +119,23 @@ LOSO fue 0.0 en 4 de 5 temporadas -- el propio proceso de selección
 prefirió casi siempre NO mezclar el ERA del cerrador con el bullpen
 general. Ver `docs/data_source_design.md`, sección "Resultado real de M3".
 
+**ML1/ML1b (Moneyline) -- ✅ ADOPTADO con advertencia (2026-07-21)**:
+pedido explícito del usuario para someter el ganador de juego completo al
+mismo protocolo. ML1 crudo empeora (`Δbrier=+0.0281`, significativo, mismo
+patrón "ordena bien, calibra mal" que T1 crudo). **ML1b calibrado sí pasa
+las 3 condiciones**: `alpha=0.2` óptimo en las 5 temporadas sin excepción
+(idéntico a T1b), `Δbrier=-0.00129` (CI `[-0.00223,-0.00031]`,
+significativo). **Advertencia que se mantiene pese a la adopción**: el
+baseline es una ventaja de localía FIJA (54%, sin señal de equipo) -- un
+piso bajo. El Brier resultante (0.2476) **NO le gana al mercado real**
+(0.2431, ver reporte técnico de `jsa/`) y cae dentro del mismo rango que
+el modelo Skellam ya en producción de `jsa/` (0.2466-0.2555) -- esta
+fórmula iguala aproximadamente lo que ya existe en el ecosistema, no
+aporta una mejora nueva sobre el estado del arte real (el mercado).
+Adoptada de todas formas por pedido explícito del usuario -- fórmula
+final: `analysis.moneyline_candidate_audit.predict_moneyline_home_win_prob(payload)`.
+Ver `docs/data_source_design.md`, sección "Resultado real de ML1/ML1b".
+
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
 confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa
@@ -127,13 +144,16 @@ salida de red, `CONNECT` devuelve 403 del proxy local).
 ## Proyecciones en vivo (juegos futuros) -- ✅ funcionando end-to-end (2026-07-21)
 
 A pedido explícito del usuario ("Hazlo"), se construyó un pipeline
-independiente para aplicar T1b/F1 a juegos **futuros**, no solo al
+independiente para aplicar T1b/F1/ML1b a juegos **futuros**, no solo al
 histórico. Distinto de todo lo anterior: "hoy" ya ES el corte, no hace
 falta reconstruir nada día por día (`stats=season` alcanza). Contexto
 completo: el reporte técnico oficial de `jsa/` (2026-07-20) confirma que
 Totales/Run Line/First Five están **sin implementar en vivo** en ese
-proyecto ("mercado no implementado en el código") -- este pipeline no
-duplica nada existente.
+proyecto ("mercado no implementado en el código") -- Moneyline sí está
+en producción ahí (aunque rindiendo peor que el mercado, igual que ML1b
+aquí). Este pipeline no duplica la infraestructura de Totales/F5, y para
+Moneyline expone la misma fórmula con la advertencia de alcance ya
+documentada.
 
 Cadena verificada pieza por pieza, cada una con su propio spike/dispatch
 antes de integrarse:
@@ -149,7 +169,9 @@ antes de integrarse:
    -- `data_sources/mlb_api.py`, `analysis/live_snapshot.py`.
 4. **Orquestador** (`scripts/build_live_projections.py`): arma el payload
    por juego (fetch en paralelo, 8 workers) y aplica
-   `predict_totals_over_prob()` (T1b) y `f1_first5_win_prob()` (F1).
+   `predict_totals_over_prob()` (T1b), `f1_first5_win_prob()` (F1) y
+   `predict_moneyline_home_win_prob()` (ML1b, con la advertencia de
+   alcance de siempre -- no vence al mercado real).
 
 **Corrida real confirmada (2026-07-21, calendario del día)**: 15 juegos
 proyectados end-to-end contra la API real y la base de datos compartida,
@@ -158,6 +180,8 @@ sin errores -- ej. Cleveland Guardians @ Minnesota Twins:
 `home_starter_xera=2.73` (Parker Messick), `park_factor=0.894`. Ver
 `.github/workflows/build_live_projections.yml` (`workflow_dispatch`, con
 fecha opcional). No persiste proyecciones -- imprime JSON a stdout.
+`moneyline_home_win_prob` se agregó al mismo orquestador el 2026-07-21,
+pendiente de una nueva corrida de verificación en vivo.
 
 ## Estructura
 

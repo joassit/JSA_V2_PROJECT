@@ -5,9 +5,11 @@ import pytest
 from analysis.moneyline_candidate_audit import (
     ALPHA_CANDIDATES,
     BASELINE_HOME_WIN_RATE,
+    ML1B_ADOPTED_ALPHA,
     evaluate_ml1,
     evaluate_ml1b_calibrated,
     moneyline_win_prob,
+    predict_moneyline_home_win_prob,
     project_home_win_prob,
 )
 
@@ -86,3 +88,25 @@ def test_evaluate_ml1b_recovers_known_alpha():
 
 def test_alpha_candidates_include_uncalibrated_case():
     assert 1.0 in ALPHA_CANDIDATES
+
+
+def test_ml1b_adopted_alpha_matches_documented_result():
+    # alpha=0.2 fue optimo en las 5 temporadas sin excepcion (LOSO real,
+    # identico al de T1b) -- la formula adoptada debe usar exactamente
+    # ese valor.
+    assert ML1B_ADOPTED_ALPHA == 0.2
+
+
+def test_predict_moneyline_home_win_prob_matches_manual_pipeline():
+    payload = {
+        "league_avg_runs_per_game": 4.5, "league_avg_ops": 0.750, "league_avg_era": 4.30,
+        "park_factor": 1.0, "home_ops": 0.780, "away_ops": 0.720,
+    }
+    from analysis.totals_candidate_audit import calibrate_prob
+
+    expected = calibrate_prob(project_home_win_prob(payload), ML1B_ADOPTED_ALPHA)
+    assert predict_moneyline_home_win_prob(payload) == pytest.approx(expected)
+
+
+def test_predict_moneyline_home_win_prob_none_when_payload_empty():
+    assert predict_moneyline_home_win_prob({}) is None
