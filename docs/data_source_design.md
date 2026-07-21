@@ -500,6 +500,105 @@ spike solo debe dispararse (`workflow_dispatch`) con confirmación
 explícita del usuario, aunque sea de solo lectura y sin persistir nada en
 producción.
 
+## Proyecciones en vivo (juegos futuros) -- ✅ funcionando end-to-end (2026-07-21)
+
+A pedido explícito del usuario ("Que nos falta para hacer eso, de forma
+independiente" / "Hazlo", tras revisar el reporte técnico oficial de
+`jsa/` del 2026-07-20, que confirma que Totales/Run Line/First Five NO
+están implementados en vivo en ese proyecto). Objetivo: aplicar las
+fórmulas ADOPTADAS (T1b, F1) a juegos **futuros**, no solo reconstruir el
+pasado.
+
+Diferencia clave con todo el resto de este documento: en el histórico,
+"hoy" (el corte point-in-time) puede ser cualquier fecha pasada, así que
+hace falta reconstruir día por día (`byDateRange`, roster a una fecha
+específica, etc.). En vivo, "hoy" ya ES literalmente el corte -- alcanza
+con `stats=season` (acumulado a la fecha actual), sin reconstrucción.
+
+### Pieza 1: calendario + abridores probables
+
+`GET /schedule?sportId=1&date=YYYY-MM-DD&hydrate=probablePitcher,team` --
+confirmado en vivo (`scripts/feasibility_spike_live_schedule.py`,
+workflow_dispatch real 2026-07-21): trae, en 1 sola llamada, todos los
+juegos del día con `gamePk`, `home/away.team.id` y
+`home/away.probablePitcher.id`. `data_sources/mlb_api.py::get_schedule_with_probables()`
++ `parse_schedule_games()`.
+
+### Pieza 2: Park Factor (sin red nueva)
+
+Metodología sabermetrica estándar (basic park factor, mismo criterio que
+FanGraphs): `(carreras totales por juego EN CASA) / (carreras totales por
+juego DE VISITA)` del mismo equipo -- aísla el efecto del parque de la
+calidad real del equipo (presente en ambas muestras), normalizado a
+promedio de liga = 1.0. Toda la entrada sale de `historical_game` (rol de
+solo lectura, 5 temporadas ya disponibles) -- **0 llamadas de red
+nuevas**, el insumo más barato de todo el pipeline en vivo.
+
+`analysis/park_factor.py` (lógica pura) + `db/database.py::ParkFactor`
+(tabla propia, `team_id` PK) + `scripts/compute_park_factors.py`
+(recalcula desde cero cada corrida, barato). **Corrida real en producción
+confirmada (2026-07-21, `compute_park_factors.yml`, `conclusion=success`)**.
+
+### Pieza 3: fetch en vivo "a hoy"
+
+`data_sources/mlb_api.py`:
+- `get_team_ops_season(team_id, season)` -- `stats=season, group=hitting`,
+  mismo patrón que `data/stats.py::get_team_ops()` del proyecto legado
+  pero sin `sitCodes`/`byDateRange` (no hace falta cortar por mano ni por
+  fecha, es el acumulado completo a hoy).
+- `get_pitcher_era_season(pitcher_id, season)` -- ERA + IP del abridor
+  probable, `stats=season, group=pitching`.
+- `get_team_active_roster(team_id)` -- `rosterType=active` (roster de
+  HOY, distinto de `rosterType=fullSeason` que usa M3 para el pool de
+  candidatos a cerrador).
+
+`analysis/live_snapshot.py::aggregate_bullpen_era()` -- ERA de equipo
+ponderado por IP sobre los pitchers del roster activo **excluyendo al
+abridor probable de hoy** (ya se cuenta aparte como `*_starter_xera`),
+mismo criterio de ponderación que `bullpen_era_as_of()` de `jsa/`.
+`compute_league_averages()` -- promedio simple de OPS/ERA sobre los
+equipos que juegan hoy (no las 30 franquicias, aproximación documentada);
+si faltan datos, `project_runs_pair()` ya cae a sus propias constantes de
+respaldo (`LEAGUE_AVG_ERA=4.30`, `LEAGUE_OPS_FALLBACK=0.750`).
+
+### Pieza 4: orquestador
+
+`scripts/build_live_projections.py::build_live_projections(target_date, season)`:
+1. Calendario + probables (Pieza 1).
+2. Fetch en paralelo (`ThreadPoolExecutor`, `MAX_WORKERS=8`) de OPS por
+   equipo, ERA de cada abridor probable, roster activo por equipo.
+3. Fetch en paralelo del ERA/IP de cada pitcher de bullpen (roster activo
+   menos el abridor de hoy) -- segunda ronda, depende de los rosters de
+   la ronda 1.
+4. Lee `ParkFactor` (Pieza 2) desde `SessionLocal()` -- solo lectura.
+5. Arma el payload por juego (`home_ops`, `away_ops`,
+   `home/away_starter_xera`, `home/away_bullpen_era`, `league_avg_era`,
+   `league_avg_ops`, `park_factor`) y aplica `predict_totals_over_prob()`
+   (T1b) y `f1_first5_win_prob()` (F1). No persiste nada -- imprime JSON.
+
+### Corrida real confirmada (2026-07-21)
+
+`build_live_projections.yml` (`workflow_dispatch`, sin `--date` = hoy),
+`conclusion=success`, 35s totales (6s del script). **15 juegos del
+calendario real proyectados sin errores**, con valores plausibles en todo
+el rango esperado: `home_ops`/`away_ops` ∈ [0.68, 0.77], ERA de abridor ∈
+[2.13, 6.45] (rango real de rotaciones activas vs. rookies con pocas
+entradas), `park_factor` ∈ [0.79, 1.15] (consistente con parques
+conocidos), `totals_over_prob` ∈ [0.43, 0.59], `first5_home_win_prob` ∈
+[0.22, 0.63] (dispersión amplia, señal de que la fórmula sí distingue
+entre juegos, no colapsa a ~0.5 parejo). 3 abridores sin ERA/IP parseable
+(pitchers sin apariciones aún esta temporada, `None` propagado
+correctamente, sin romper el pipeline -- el fallback de
+`project_runs_pair()` cubre esos casos). Ejemplo real: Cleveland Guardians
+@ Minnesota Twins (`game_pk=824409`), abridor local Parker Messick
+(`home_starter_xera=2.73`), `park_factor=0.894` (Target Field, algo
+pitcher-friendly), `totals_over_prob=0.430`, `first5_home_win_prob=0.370`.
+
+**No autorizado todavía**: persistir estas proyecciones en una tabla
+propia, exponerlas via API/UI, o correr el orquestador en un cron
+automático -- este pipeline demuestra factibilidad end-to-end, la
+productización (si se decide) es una decisión aparte.
+
 ## Prioridad recomendada
 
 **T1 (Totales) primero**: cero ingesta nueva, ground truth ya existe,

@@ -124,6 +124,41 @@ GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
 confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa
 salida de red, `CONNECT` devuelve 403 del proxy local).
 
+## Proyecciones en vivo (juegos futuros) -- ✅ funcionando end-to-end (2026-07-21)
+
+A pedido explícito del usuario ("Hazlo"), se construyó un pipeline
+independiente para aplicar T1b/F1 a juegos **futuros**, no solo al
+histórico. Distinto de todo lo anterior: "hoy" ya ES el corte, no hace
+falta reconstruir nada día por día (`stats=season` alcanza). Contexto
+completo: el reporte técnico oficial de `jsa/` (2026-07-20) confirma que
+Totales/Run Line/First Five están **sin implementar en vivo** en ese
+proyecto ("mercado no implementado en el código") -- este pipeline no
+duplica nada existente.
+
+Cadena verificada pieza por pieza, cada una con su propio spike/dispatch
+antes de integrarse:
+
+1. **Calendario + abridores probables**: `/schedule?hydrate=probablePitcher,team`
+   confirmado en vivo (`scripts/feasibility_spike_live_schedule.py`).
+2. **Park factor**: metodología sabermetrica estándar (carreras por juego
+   en casa vs. de visita, normalizado a promedio de liga=1.0), calculada
+   enteramente desde `historical_game` -- **cero llamadas de red nuevas**.
+   Persistido en tabla propia `park_factor` (`scripts/compute_park_factors.py`).
+3. **Fetch en vivo "a hoy"**: OPS de equipo, ERA de cada abridor probable,
+   ERA de bullpen ponderado por IP (roster activo, sin el abridor de hoy)
+   -- `data_sources/mlb_api.py`, `analysis/live_snapshot.py`.
+4. **Orquestador** (`scripts/build_live_projections.py`): arma el payload
+   por juego (fetch en paralelo, 8 workers) y aplica
+   `predict_totals_over_prob()` (T1b) y `f1_first5_win_prob()` (F1).
+
+**Corrida real confirmada (2026-07-21, calendario del día)**: 15 juegos
+proyectados end-to-end contra la API real y la base de datos compartida,
+sin errores -- ej. Cleveland Guardians @ Minnesota Twins:
+`totals_over_prob=0.430`, `first5_home_win_prob=0.370`, con
+`home_starter_xera=2.73` (Parker Messick), `park_factor=0.894`. Ver
+`.github/workflows/build_live_projections.yml` (`workflow_dispatch`, con
+fecha opcional). No persiste proyecciones -- imprime JSON a stdout.
+
 ## Estructura
 
 ```
