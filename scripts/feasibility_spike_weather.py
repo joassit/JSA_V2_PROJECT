@@ -3,9 +3,14 @@ Spike de factibilidad para clima/temperatura -- posible insumo NUEVO para
 T1b/T1-Platt (Totales), ver docs/data_source_design.md. Verifica en vivo,
 ANTES de comprometerse a ingerir/consumir nada:
 
-1. `/game/{gamePk}/boxscore` -> `gameData.weather` (temp/condition/wind)
-   responde para un juego HISTORICO ya completado -- insumo necesario
-   para construir el dataset de entrenamiento (13,101 juegos).
+1. `/game/{gamePk}/feed/live` (v1.1) -> `gameData.weather` (temp/
+   condition/wind) responde para un juego HISTORICO ya completado --
+   insumo necesario para construir el dataset de entrenamiento (13,101
+   juegos). PRIMER INTENTO (`/api/v1/game/{gamePk}/boxscore`) confirmo en
+   vivo que ESE endpoint especifico NUNCA trae `gameData.weather`
+   (siempre None, tanto para juegos completados como futuros) -- error
+   de suposicion inicial, corregido aqui probando el endpoint correcto
+   (`feed/live`, que es donde MLB Stats API expone el clima real).
 2. El mismo campo para un juego FUTURO/programado de hoy -- clave para
    saber si el clima esta disponible ANTES del juego (proyeccion en
    vivo real) o solo DESPUES (util solo para el historico, inutil para
@@ -28,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import requests
 
 MLB_API_BASE = "https://statsapi.mlb.com/api/v1"
+MLB_API_BASE_V11 = "https://statsapi.mlb.com/api/v1.1"
 
 
 def _fetch_schedule(target_date: str) -> dict:
@@ -40,17 +46,17 @@ def _fetch_schedule(target_date: str) -> dict:
     return resp.json()
 
 
-def _fetch_boxscore(game_pk: int) -> dict:
+def _fetch_live_feed(game_pk: int) -> dict:
     t0 = time.monotonic()
-    resp = requests.get(f"{MLB_API_BASE}/game/{game_pk}/boxscore", timeout=15)
+    resp = requests.get(f"{MLB_API_BASE_V11}/game/{game_pk}/feed/live", timeout=15)
     elapsed = time.monotonic() - t0
     resp.raise_for_status()
-    print(f"  boxscore gamePk={game_pk}: status={resp.status_code} elapsed={elapsed:.3f}s")
+    print(f"  feed/live gamePk={game_pk}: status={resp.status_code} elapsed={elapsed:.3f}s")
     return resp.json()
 
 
-def _print_weather(label: str, boxscore: dict) -> dict | None:
-    weather = (boxscore.get("gameData") or {}).get("weather")
+def _print_weather(label: str, feed: dict) -> dict | None:
+    weather = (feed.get("gameData") or {}).get("weather")
     print(f"  [{label}] gameData.weather = {weather}")
     return weather
 
@@ -70,8 +76,8 @@ def main() -> int:
         historical_weather = None
     else:
         game_pk = completed[0]["gamePk"]
-        box = _fetch_boxscore(game_pk)
-        historical_weather = _print_weather("HISTORICO (completado)", box)
+        feed = _fetch_live_feed(game_pk)
+        historical_weather = _print_weather("HISTORICO (completado)", feed)
 
     # --- Parte 2: juego FUTURO/programado de hoy ---
     print(f"\nBuscando calendario de hoy ({today.isoformat()}) para un juego programado...")
@@ -83,8 +89,8 @@ def main() -> int:
         future_weather = None
     else:
         game_pk = scheduled[0]["gamePk"]
-        box = _fetch_boxscore(game_pk)
-        future_weather = _print_weather("FUTURO (programado, aun sin jugar)", box)
+        feed = _fetch_live_feed(game_pk)
+        future_weather = _print_weather("FUTURO (programado, aun sin jugar)", feed)
 
     print("\n=== CONCLUSION ===")
     print(f"Clima disponible para juego historico completado: {historical_weather is not None}")
