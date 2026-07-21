@@ -1,0 +1,22 @@
+name: compute_park_factors
+
+# workflow_dispatch manual. Escribe SOLO en el schema propio
+# (park_factor, team_strength). Sin llamadas de red nueva -- toda la
+# entrada viene de historical_game (rol de solo lectura). Se puede
+# re-correr sin costo, siempre recalcula desde cero.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  compute:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/compute_park_factors.py
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}

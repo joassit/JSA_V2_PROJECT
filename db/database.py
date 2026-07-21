@@ -157,6 +157,29 @@ class CloserEraSnapshot(Base):
     )
 
 
+class ParkFactor(Base):
+    """
+    Park factor por equipo (1 parque = 1 team_id), calculado desde
+    `historical_game` -- ver analysis/park_factor.py. Insumo de las
+    formulas ADOPTADAS (T1b, F1) para proyecciones en vivo. No
+    point-in-time -- se recalcula con todo el historico disponible cada
+    vez que se corre el script, no hay "fecha de corte" relevante para
+    esto (el parque no cambia de temporada a temporada, salvo casos
+    raros documentados aparte).
+    """
+    __tablename__ = "park_factor"
+
+    team_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    park_factor: Mapped[float] = mapped_column(Float, nullable=False)
+    seasons_used: Mapped[str] = mapped_column(String, nullable=False)
+    games_used: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    source: Mapped[str] = mapped_column(String, default="historical_game_computed")
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class PitcherMatchupFeature(Base):
     """
     Feature point-in-time-safe por juego: OPS del lineup rival contra la
