@@ -286,3 +286,130 @@ def parse_team_hitting_split(payload: dict) -> dict | None:
     except (KeyError, IndexError, TypeError, ValueError) as e:
         logger.warning(f"No se pudo parsear split de bateo: {e}")
         return None
+
+
+# --- Proyecciones EN VIVO (juegos futuros) -- ver docs/data_source_design.md,
+# "Proyecciones en vivo". A diferencia de todo lo anterior (point-in-time
+# historico), aqui "hoy" ya ES el corte -- no hace falta reconstruir dia
+# por dia, `stats=season` de la API ya da el acumulado correcto.
+
+def get_schedule_with_probables(target_date: str, timeout: int = 15) -> dict | None:
+    """JSON crudo de /schedule?hydrate=probablePitcher,team -- confirmado
+    en vivo (scripts/feasibility_spike_live_schedule.py). `target_date`
+    en formato YYYY-MM-DD."""
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/schedule",
+            params={"sportId": 1, "date": target_date, "hydrate": "probablePitcher,team"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener el calendario de {target_date}: {e}")
+        return None
+
+
+def parse_schedule_games(payload: dict) -> list[dict]:
+    """Reduce el calendario crudo a una lista de
+    {game_pk, home_team_id, away_team_id, home_pitcher_id, away_pitcher_id}
+    -- solo juegos con ambos abridores probables ya anunciados."""
+    games: list[dict] = []
+    for d in payload.get("dates") or []:
+        for g in d.get("games") or []:
+            teams = g.get("teams") or {}
+            home, away = teams.get("home") or {}, teams.get("away") or {}
+            home_team_id = (home.get("team") or {}).get("id")
+            away_team_id = (away.get("team") or {}).get("id")
+            home_pitcher_id = (home.get("probablePitcher") or {}).get("id")
+            away_pitcher_id = (away.get("probablePitcher") or {}).get("id")
+            if None in (home_team_id, away_team_id):
+                continue
+            games.append({
+                "game_pk": g.get("gamePk"),
+                "home_team_id": home_team_id, "away_team_id": away_team_id,
+                "home_pitcher_id": home_pitcher_id, "away_pitcher_id": away_pitcher_id,
+            })
+    return games
+
+
+def get_team_ops_season(team_id: int, season: int, timeout: int = 15) -> dict | None:
+    """JSON crudo de OPS de equipo, temporada a la fecha ACTUAL --
+    `stats=season` (sin sitCodes ni byDateRange, mismo patron que
+    `data/stats.py::get_team_ops()` del proyecto legado). "Hoy" ya es el
+    corte, no hace falta reconstruir nada."""
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/teams/{team_id}/stats",
+            params={"stats": "season", "group": "hitting", "season": season},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener OPS en vivo del equipo {team_id}: {e}")
+        return None
+
+
+def get_pitcher_era_season(pitcher_id: int, season: int, timeout: int = 15) -> dict | None:
+    """JSON crudo de ERA/IP de un pitcher, temporada a la fecha ACTUAL."""
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/people/{pitcher_id}/stats",
+            params={"stats": "season", "group": "pitching", "season": season},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener ERA en vivo del pitcher {pitcher_id}: {e}")
+        return None
+
+
+def get_team_active_roster(team_id: int, timeout: int = 15) -> dict | None:
+    """JSON crudo del roster ACTIVO actual (sin `date=`, refleja el
+    roster de HOY) -- distinto de get_team_roster_full_season(), que
+    trae el pool de TODA la temporada (usado para el pool de candidatos
+    a cerrador, no para bullpen en vivo)."""
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/teams/{team_id}/roster",
+            params={"rosterType": "active"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener el roster activo del equipo {team_id}: {e}")
+        return None
+
+
+def parse_ops_from_season_stats(payload: dict) -> float | None:
+    try:
+        splits = payload["stats"][0]["splits"]
+        if not splits:
+            return None
+        ops = splits[0]["stat"].get("ops")
+        return float(ops) if ops is not None else None
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        logger.warning(f"No se pudo parsear OPS de season stats: {e}")
+        return None
+
+
+def parse_era_ip_from_season_stats(payload: dict) -> tuple[float, float] | None:
+    """(era, innings_pitched) o None si falta algun dato."""
+    try:
+        splits = payload["stats"][0]["splits"]
+        if not splits:
+            return None
+        stat = splits[0]["stat"]
+        era, ip_str = stat.get("era"), stat.get("inningsPitched")
+        if era is None or ip_str is None:
+            return None
+        whole, _, frac = str(ip_str).partition(".")
+        whole_f = float(whole) if whole else 0.0
+        thirds = {"0": 0.0, "1": 1 / 3, "2": 2 / 3}.get(frac, 0.0)
+        return float(era), whole_f + thirds
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        logger.warning(f"No se pudo parsear ERA/IP de season stats: {e}")
+        return None
