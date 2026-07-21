@@ -204,11 +204,19 @@ def evaluate_f1_platt_calibrated(
     # metodologia, mismos folds/juegos.
     vs_f1_raw = bootstrap_delta_brier(loso_platt_probs, model_raw, actuals, n_resamples=n_resamples, seed=seed)
 
+    # Parametros finales para PRODUCCION: ajustados sobre las 5
+    # temporadas COMPLETAS (sin excluir ninguna) -- LOSO es solo para
+    # validar que la mejora generaliza, no para elegir la constante que
+    # se usa de ahi en adelante (mismo criterio que T1B_ADOPTED_ALPHA,
+    # que tambien es un valor unico, no uno distinto por fold).
+    full_a, full_b = fit_platt_params(model_raw, actuals)
+
     return {
         "hypothesis": "f1_platt_calibrated",
         "target": "first5",
         "n_games_covered": n_covered,
         "fold_platt_params": fold_platt,
+        "full_data_platt_params": {"a": full_a, "b": full_b},
         "loso_brier_platt": brier_score(loso_platt_probs, actuals),
         "loso_auc_platt": roc_auc(loso_platt_probs, actuals),
         "brier_baseline": brier_score(baseline_probs, actuals),
