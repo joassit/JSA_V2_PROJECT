@@ -134,6 +134,17 @@ def evaluate_weather1(
     coefs_chosen = [v["best_coef"] for v in fold_coefs.values()]
     coef_stable = len(set(coefs_chosen)) == 1 if coefs_chosen else False
 
+    # Coeficiente final para PRODUCCION: elegido sobre las 5 temporadas
+    # COMPLETAS (sin excluir ninguna) -- LOSO es solo para validar que la
+    # mejora generaliza, no para elegir la constante que se usa de ahi en
+    # adelante (mismo criterio que T1B_ADOPTED_ALPHA/F1_PLATT_ADOPTED_A/B).
+    full_best_coef, full_best_brier = None, float("inf")
+    for coef in coef_candidates:
+        full_probs = [temp_adjust_prob(baseline_probs[i], temps[i], coef) for i in range(n_covered)]
+        b = brier_score(full_probs, actuals)
+        if b is not None and b < full_best_brier:
+            full_best_brier, full_best_coef = b, coef
+
     return {
         "hypothesis": "weather1_temperature_adjustment",
         "target": "totals",
@@ -143,6 +154,7 @@ def evaluate_weather1(
         "coverage_pct": coverage_pct,
         "fold_coefs": fold_coefs,
         "coef_stable_across_folds": coef_stable,
+        "full_data_best_coef": full_best_coef,
         "loso_brier_adjusted": brier_score(loso_adjusted_probs, actuals),
         "loso_auc_adjusted": roc_auc(loso_adjusted_probs, actuals),
         "brier_t1b_baseline": brier_score(baseline_probs, actuals),
