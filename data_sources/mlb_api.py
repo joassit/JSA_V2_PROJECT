@@ -312,8 +312,11 @@ def get_schedule_with_probables(target_date: str, timeout: int = 15) -> dict | N
 
 def parse_schedule_games(payload: dict) -> list[dict]:
     """Reduce el calendario crudo a una lista de
-    {game_pk, home_team_id, away_team_id, home_pitcher_id, away_pitcher_id}
-    -- solo juegos con ambos abridores probables ya anunciados."""
+    {game_pk, home_team_id, away_team_id, home_pitcher_id, away_pitcher_id,
+    venue_id} -- solo juegos con ambos abridores probables ya anunciados.
+    `venue_id` se usa para el pronostico de clima (ver
+    analysis/ballpark_locations.py) -- puede ser None si el calendario no
+    trae `venue` para ese juego."""
     games: list[dict] = []
     for d in payload.get("dates") or []:
         for g in d.get("games") or []:
@@ -329,6 +332,7 @@ def parse_schedule_games(payload: dict) -> list[dict]:
                 "game_pk": g.get("gamePk"),
                 "home_team_id": home_team_id, "away_team_id": away_team_id,
                 "home_pitcher_id": home_pitcher_id, "away_pitcher_id": away_pitcher_id,
+                "venue_id": (g.get("venue") or {}).get("id"),
             })
     return games
 

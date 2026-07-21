@@ -16,6 +16,7 @@ def test_parse_schedule_games_extracts_teams_and_probables():
                             "home": {"team": {"id": 142}, "probablePitcher": {"id": 800048}},
                             "away": {"team": {"id": 114}, "probablePitcher": {"id": 999}},
                         },
+                        "venue": {"id": 5},
                     }
                 ]
             }
@@ -24,7 +25,7 @@ def test_parse_schedule_games_extracts_teams_and_probables():
     games = parse_schedule_games(payload)
     assert games == [{
         "game_pk": 123, "home_team_id": 142, "away_team_id": 114,
-        "home_pitcher_id": 800048, "away_pitcher_id": 999,
+        "home_pitcher_id": 800048, "away_pitcher_id": 999, "venue_id": 5,
     }]
 
 
@@ -47,7 +48,7 @@ def test_parse_schedule_games_allows_missing_probable_pitcher():
     games = parse_schedule_games(payload)
     assert games == [{
         "game_pk": 5, "home_team_id": 1, "away_team_id": 2,
-        "home_pitcher_id": None, "away_pitcher_id": None,
+        "home_pitcher_id": None, "away_pitcher_id": None, "venue_id": None,
     }]
 
 
