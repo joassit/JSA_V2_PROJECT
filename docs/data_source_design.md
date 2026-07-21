@@ -457,6 +457,77 @@ aditivo en espacio logit) que el shrinkage lineal simple no podía
 corregir -- consistente con que F1 nunca había pasado por NINGUNA
 calibración antes.
 
+## Resultado real de RL1/RL1b/RL1-Platt (Run Line) -- 2026-07-21, ✅ ADOPTADO (RL1-Platt)
+
+Pedido explícito del usuario tras la pregunta "¿ahora qué podemos
+mejorar?" -- extensión más barata posible: reusa exactamente la misma
+distribución Skellam(mu_home, mu_away) de `project_runs_pair()` que ya
+usa ML1b, cambiando el umbral de comparación de `P(D>0)` (Moneyline) a
+`P(D>1.5)` ("cubre -1.5", línea estándar de MLB, externa). Cero ingesta
+nueva. Baseline: equipos promedio + bono de localía (mismo criterio que
+el baseline de T1).
+
+Corrida real (`runline_candidate_audit.yml`, run
+[29858722133](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29858722133)),
+13,101 juegos:
+
+| Variante | Brier | vs. baseline (0.2418) | ¿Pasa? |
+|---|---|---|---|
+| RL1 crudo | 0.2501 | `Δ=+0.00834` (significativo, dirección mala) | ❌ No |
+| RL1b lineal (`alpha=0.5` estable en las 5 temporadas) | 0.2338 | `Δ=-0.00795` (CI `[-0.01082,-0.00507]`, sig.) | ✅ Sí |
+| **RL1-Platt** | **0.2292** | `Δ=-0.01260` (CI `[-0.01436,-0.01072]`, sig.) | ✅ **Sí** |
+
+**A diferencia de T1/ML1 (donde el shrinkage lineal ya bastaba), en Run
+Line Platt es la MEJOR de las 3 variantes**: además de vencer al
+baseline, vence al RL1b lineal de forma significativa
+(`delta_brier_vs_rl1b_linear=-0.00465`, `vs_rl1b_significant=true`).
+
+**✅ ADOPTADO -- autorización explícita del usuario, 2026-07-21**
+("Aplícalo"). Fórmula final:
+`analysis.runline_candidate_audit.predict_runline_home_covers_prob(payload)`
+-- `project_runs_pair()` → `home_covers_prob()` →
+`platt_calibrate(a=RL1_PLATT_ADOPTED_A=0.15210344440371978, b=RL1_PLATT_ADOPTED_B=-0.4420859447827888)`
+(ajustados sobre las 5 temporadas completas). Integrada al orquestador
+de proyecciones en vivo (`scripts/build_live_projections.py`, campos
+`run_line_margin`, `runline_home_covers_prob`) y **verificada en vivo el
+mismo día** (run
+[29867529048](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29867529048),
+`conclusion=success`): ej. `game_pk=823519` (NYY vs. PIT),
+`runline_home_covers_prob=0.376`.
+
+## Resultado real de Weather1 (clima sobre Totales) -- EN PROGRESO (2026-07-21)
+
+Pedido explícito del usuario ("agregamos un API") tras confirmar en vivo
+(`scripts/feasibility_spike_weather.py`, corregido tras un bug real de
+falso positivo con `{}` vacío) que MLB Stats API expone clima real
+(`temp`, `condition`, `wind`) vía `/game/{gamePk}/feed/live` (v1.1) --
+pero **solo DESPUÉS de que el juego ocurre**, nunca antes (un juego
+programado de hoy trae `gameData.weather={}`). Esto separa el trabajo en
+2 piezas independientes:
+
+1. **Ingesta histórica** (`scripts/ingest_weather.py`, tabla propia
+   `weather_snapshot`): en curso, dispatchada
+   (`ingest_weather.yml`) -- 13,101 juegos, paralelizado 12 workers,
+   timeout de 180 min (similar orden de magnitud al ingest de Chase Rate,
+   ~75 min para 25,621 snapshots).
+2. **Pronóstico en vivo** (`data_sources/mlb_api.py::get_forecast_temperature()`,
+   Open-Meteo, gratis, sin API key): **confirmado en vivo**
+   (`feasibility_spike_open_meteo.yml`, run
+   [29867527216](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29867527216),
+   `conclusion=success`) -- pronóstico real de temperatura para Yankee
+   Stadium, ej. 74-78°F para hoy en el horario típico de primer pitch
+   (18-21h), respuesta en <0.5s.
+
+**Hipótesis (`analysis/weather_candidate_audit.py::evaluate_weather1()`)**:
+a diferencia de M1/M2/M3/ML1/RL1 (comparados contra un baseline débil),
+aquí el baseline **es T1b mismo** (la mejor fórmula de Totales ya
+adoptada) -- la pregunta es si la temperatura real aporta algo **nuevo**
+más allá de lo que T1b ya predice, no si le gana a un baseline ingenuo.
+Ajuste logístico de 1 coeficiente sobre la desviación respecto a 70°F
+(referencia externa), elegido vía LOSO real. Pendiente de correr contra
+el histórico real hasta que termine la ingesta (paso 1) -- resultado
+real pendiente de reportar.
+
 ## Línea 1 -- Matchup Pitcher vs Lineup por mano (LHP/RHP)
 
 ### Qué se prueba

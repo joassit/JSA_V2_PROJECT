@@ -161,6 +161,26 @@ Adoptada de todas formas por pedido explícito del usuario -- fórmula
 final: `analysis.moneyline_candidate_audit.predict_moneyline_home_win_prob(payload)`.
 Ver `docs/data_source_design.md`, sección "Resultado real de ML1/ML1b".
 
+**RL1/RL1b/RL1-Platt (Run Line) -- ✅ ADOPTADO, RL1-Platt (2026-07-21)**:
+extensión más barata posible (misma Skellam de ML1b, umbral `P(D>1.5)`
+en vez de `P(D>0)`). RL1 crudo empeora. RL1b lineal pasa
+(`Δbrier=-0.00795`). **RL1-Platt es la MEJOR de las 3** -- a diferencia
+de T1/ML1, aquí Platt le gana también al lineal de forma significativa
+(`Δbrier=-0.01260` vs. baseline, `Δbrier=-0.00465` vs. RL1b lineal,
+ambos significativos). Adoptada y **verificada en vivo el mismo día** --
+fórmula final:
+`analysis.runline_candidate_audit.predict_runline_home_covers_prob(payload)`.
+Ver `docs/data_source_design.md`, sección "Resultado real de RL1/RL1b/RL1-Platt".
+
+**Weather1 (clima sobre Totales) -- EN PROGRESO (2026-07-21)**: pedido
+explícito del usuario para probar si la temperatura real mejora T1b
+(el baseline aquí es T1b mismo, no uno débil). Confirmado en vivo: MLB
+Stats API solo registra clima DESPUÉS del juego (`/feed/live`, nunca
+antes) -- se agregó Open-Meteo (gratis, sin API key, **confirmado en
+vivo**) para pronóstico en juegos futuros. Ingesta histórica de
+13,101 juegos en curso (`ingest_weather.yml`, puede tardar 1-3h). Ver
+`docs/data_source_design.md`, sección "Resultado real de Weather1".
+
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
 confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa
