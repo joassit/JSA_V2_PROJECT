@@ -3,11 +3,18 @@ Orquestador de proyecciones EN VIVO (juegos futuros) -- arma el payload de
 cada juego del dia (o de una fecha dada) con datos "a hoy" (OPS de
 temporada, ERA del abridor probable, ERA de bullpen ponderado por IP del
 roster activo, park factor ya calculado por scripts/compute_park_factors.py)
-y aplica las 3 formulas ADOPTADAS (T1b, F1, ML1b) -- ver
+y aplica las 4 formulas ADOPTADAS (T1b, F1-Platt, ML1b, RL1-Platt) mas la
+version de Totales ajustada por clima real (Weather1) -- ver
 docs/data_source_design.md, "Proyecciones en vivo". ML1b tiene una
 advertencia de alcance propia (no vence al mercado real, ver
 analysis/moneyline_candidate_audit.py) -- se incluye igual, adoptada por
 pedido explicito del usuario.
+
+El pronostico de temperatura (Open-Meteo, sin API key) se pide por
+`venue_id` -> coordenadas reales (`/venues/{id}?hydrate=location`, sin
+mapeo manual) -> pronostico horario para la fecha del juego. Si el venue
+o el pronostico no estan disponibles, `totals_over_prob_weather_adjusted`
+queda en None -- nunca rompe el resto de las proyecciones.
 
 Distinto de todo lo point-in-time historico de este proyecto: "hoy" ya ES
 el corte, no hace falta reconstruir nada dia por dia -- stats=season de la
@@ -34,10 +41,12 @@ from analysis.live_snapshot import aggregate_bullpen_era, compute_league_average
 from analysis.moneyline_candidate_audit import predict_moneyline_home_win_prob
 from analysis.runline_candidate_audit import RUN_LINE_MARGIN, predict_runline_home_covers_prob
 from analysis.totals_candidate_audit import TOTALS_LINE, predict_totals_over_prob
+from analysis.weather_candidate_audit import predict_totals_over_prob_weather_adjusted
 from data_sources.mlb_api import (
-    get_pitcher_era_season, get_schedule_with_probables, get_team_active_roster,
-    get_team_ops_season, parse_era_ip_from_season_stats, parse_ops_from_season_stats,
-    parse_schedule_games,
+    get_forecast_temperature, get_pitcher_era_season, get_schedule_with_probables,
+    get_team_active_roster, get_team_ops_season, get_venue_location_raw,
+    parse_era_ip_from_season_stats, parse_ops_from_season_stats, parse_schedule_games,
+    parse_venue_coordinates,
 )
 from db.database import ParkFactor, SessionLocal
 
@@ -77,6 +86,17 @@ def _fetch_pitcher_era_ip(pitcher_id: int, season: int) -> tuple[int, tuple[floa
 
 def _fetch_roster(team_id: int) -> tuple[int, dict | None]:
     return team_id, get_team_active_roster(team_id)
+
+
+def _fetch_venue_temp(venue_id: int, target_date: str) -> tuple[int, float | None]:
+    location_payload = get_venue_location_raw(venue_id)
+    if location_payload is None:
+        return venue_id, None
+    coords = parse_venue_coordinates(location_payload)
+    if coords is None:
+        return venue_id, None
+    lat, lon = coords
+    return venue_id, get_forecast_temperature(lat, lon, target_date)
 
 
 def build_live_projections(target_date: str, season: int) -> list[dict]:
@@ -122,6 +142,10 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
     starter_eras = [v[0] for v in starter_era_ip.values() if v is not None]
     league_avgs = compute_league_averages(list(ops_by_team.values()), starter_eras)
 
+    venue_ids = sorted({g["venue_id"] for g in games if g.get("venue_id") is not None})
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        temp_by_venue = dict(pool.map(lambda v: _fetch_venue_temp(v, target_date), venue_ids))
+
     results = []
     for g in games:
         home_id, away_id = g["home_team_id"], g["away_team_id"]
@@ -141,14 +165,21 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
             "park_factor": park_factors.get(home_id),
         }
 
+        temp_f = temp_by_venue.get(g.get("venue_id"))
+
         results.append({
             "game_pk": g["game_pk"],
             "home_team_id": home_id,
             "away_team_id": away_id,
             "home_pitcher_id": home_pitcher_id,
             "away_pitcher_id": away_pitcher_id,
+            "venue_id": g.get("venue_id"),
+            "temp_f_forecast": temp_f,
             "totals_line": TOTALS_LINE,
             "totals_over_prob": predict_totals_over_prob(payload),
+            "totals_over_prob_weather_adjusted": (
+                predict_totals_over_prob_weather_adjusted(payload, temp_f) if temp_f is not None else None
+            ),
             "first5_home_win_prob": predict_first5_home_win_prob(payload),
             "moneyline_home_win_prob": predict_moneyline_home_win_prob(payload),
             "run_line_margin": RUN_LINE_MARGIN,

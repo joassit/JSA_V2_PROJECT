@@ -5,7 +5,9 @@ import pytest
 from analysis.weather_candidate_audit import (
     COEF_CANDIDATES,
     TEMP_REFERENCE_F,
+    WEATHER1_ADOPTED_COEF,
     evaluate_weather1,
+    predict_totals_over_prob_weather_adjusted,
     temp_adjust_prob,
 )
 
@@ -99,3 +101,25 @@ def test_evaluate_weather1_no_signal_does_not_beat_baseline_falsely():
 
 def test_coef_candidates_include_zero():
     assert 0.0 in COEF_CANDIDATES
+
+
+def test_weather1_adopted_coef_matches_documented_result():
+    # coef=0.015 fue optimo sobre las 5 temporadas completas (LOSO real,
+    # ver docs/data_source_design.md).
+    assert WEATHER1_ADOPTED_COEF == 0.015
+
+
+def test_predict_totals_over_prob_weather_adjusted_matches_manual_pipeline():
+    from analysis.totals_candidate_audit import predict_totals_over_prob
+
+    payload = {
+        "league_avg_runs_per_game": 4.5, "league_avg_ops": 0.750, "league_avg_era": 4.30,
+        "park_factor": 1.0, "home_ops": 0.780, "away_ops": 0.720,
+    }
+    temp_f = 85.0
+    expected = temp_adjust_prob(predict_totals_over_prob(payload), temp_f, WEATHER1_ADOPTED_COEF)
+    assert predict_totals_over_prob_weather_adjusted(payload, temp_f) == pytest.approx(expected)
+
+
+def test_predict_totals_over_prob_weather_adjusted_none_when_payload_empty():
+    assert predict_totals_over_prob_weather_adjusted({}, 75.0) is None

@@ -451,6 +451,37 @@ def parse_weather(payload: dict) -> dict | None:
     return {"temp_f": temp_f, "condition": weather.get("condition"), "wind_raw": weather.get("wind")}
 
 
+def get_venue_location_raw(venue_id: int, timeout: int = 15) -> dict | None:
+    """JSON crudo de /venues/{id}?hydrate=location -- confirmado en vivo
+    (scripts/feasibility_spike_venues.py) que trae `defaultCoordinates`
+    real, sin necesidad de ningun mapeo estadio->lat/lon escrito a mano."""
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/venues/{venue_id}", params={"hydrate": "location"}, timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener la ubicacion del venue {venue_id}: {e}")
+        return None
+
+
+def parse_venue_coordinates(payload: dict) -> tuple[float, float] | None:
+    """(latitude, longitude) o None si falta algun dato."""
+    try:
+        venues = payload.get("venues") or []
+        if not venues:
+            return None
+        coords = (venues[0].get("location") or {}).get("defaultCoordinates") or {}
+        lat, lon = coords.get("latitude"), coords.get("longitude")
+        if lat is None or lon is None:
+            return None
+        return float(lat), float(lon)
+    except (KeyError, TypeError, ValueError) as e:
+        logger.warning(f"No se pudo parsear coordenadas de venue: {e}")
+        return None
+
+
 def get_forecast_temperature(latitude: float, longitude: float, target_date: str, timeout: int = 15) -> float | None:
     """
     Temperatura pronosticada (°F) para una fecha/ubicacion -- Open-Meteo,

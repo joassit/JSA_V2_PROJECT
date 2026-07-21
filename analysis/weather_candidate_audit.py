@@ -56,6 +56,30 @@ def temp_adjust_prob(p_baseline: float, temp_f: float, coef: float) -> float:
     return _sigmoid(_safe_logit(p_baseline) + coef * (temp_f - TEMP_REFERENCE_F))
 
 
+# --- Weather1 ADOPTADO (autorizado explicitamente por el usuario, 2026-07-21) ---
+# Coeficiente elegido sobre las 5 temporadas COMPLETAS (13,101 juegos,
+# sin excluir ninguna -- LOSO es solo para validar que la mejora
+# generaliza). delta_brier=-0.00175 vs. T1b (CI [-0.00241,-0.00109],
+# significativo, |delta|>=0.001) -- la temperatura real aporta señal
+# NUEVA mas alla de lo que T1b ya predice. Signo positivo consistente con
+# la fisica de beisbol (mas calor -> aire menos denso -> la pelota vuela
+# mas lejos -> mas probabilidad de over).
+WEATHER1_ADOPTED_COEF = 0.015
+
+
+def predict_totals_over_prob_weather_adjusted(payload: dict, temp_f: float) -> float | None:
+    """
+    Formula ADOPTADA de Totales + clima (Weather1) -- autorizado
+    explicitamente por el usuario, 2026-07-21: predict_totals_over_prob()
+    (T1b) -> temp_adjust_prob(coef=WEATHER1_ADOPTED_COEF). None si el
+    payload no permite proyectar (mismo comportamiento que T1b).
+    """
+    p_t1b = predict_totals_over_prob(payload)
+    if p_t1b is None:
+        return None
+    return temp_adjust_prob(p_t1b, temp_f, WEATHER1_ADOPTED_COEF)
+
+
 def _prepare_series(games: list[dict]) -> dict:
     """
     games: lista de dicts con 'season', 'payload', 'temp_f', 'home_score',

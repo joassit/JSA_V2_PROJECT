@@ -2,6 +2,8 @@ from data_sources.mlb_api import (
     parse_era_ip_from_season_stats,
     parse_ops_from_season_stats,
     parse_schedule_games,
+    parse_venue_coordinates,
+    parse_weather,
 )
 
 
@@ -86,3 +88,29 @@ def test_parse_era_ip_from_season_stats_none_without_splits():
 def test_parse_era_ip_from_season_stats_none_missing_field():
     payload = {"stats": [{"splits": [{"stat": {"era": "3.00"}}]}]}
     assert parse_era_ip_from_season_stats(payload) is None
+
+
+def test_parse_weather_real_data():
+    payload = {"gameData": {"weather": {"condition": "Partly Cloudy", "temp": "78", "wind": "3 mph, In From CF"}}}
+    assert parse_weather(payload) == {
+        "temp_f": 78.0, "condition": "Partly Cloudy", "wind_raw": "3 mph, In From CF",
+    }
+
+
+def test_parse_weather_empty_dict_is_none():
+    # Juego aun no jugado -- gameData.weather={} (confirmado en vivo,
+    # scripts/feasibility_spike_weather.py).
+    assert parse_weather({"gameData": {"weather": {}}}) is None
+    assert parse_weather({"gameData": {}}) is None
+    assert parse_weather({}) is None
+
+
+def test_parse_venue_coordinates_real_data():
+    payload = {"venues": [{"location": {"defaultCoordinates": {"latitude": 38.57994, "longitude": -121.51246}}}]}
+    assert parse_venue_coordinates(payload) == (38.57994, -121.51246)
+
+
+def test_parse_venue_coordinates_none_without_coordinates():
+    assert parse_venue_coordinates({"venues": [{"location": {}}]}) is None
+    assert parse_venue_coordinates({"venues": []}) is None
+    assert parse_venue_coordinates({}) is None
