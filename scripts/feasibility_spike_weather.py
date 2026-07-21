@@ -56,8 +56,16 @@ def _fetch_live_feed(game_pk: int) -> dict:
 
 
 def _print_weather(label: str, feed: dict) -> dict | None:
+    """
+    Devuelve el dict de clima SOLO si tiene datos reales -- un dict vacio
+    ({}) no es None, pero tampoco es clima disponible (bug real
+    encontrado en la primera version de este spike: `is not None` daba
+    falso positivo con {}). `temp`/`condition` presentes = dato real.
+    """
     weather = (feed.get("gameData") or {}).get("weather")
     print(f"  [{label}] gameData.weather = {weather}")
+    if not weather or not weather.get("temp"):
+        return None
     return weather
 
 
