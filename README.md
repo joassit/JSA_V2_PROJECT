@@ -187,6 +187,17 @@ mismo día** -- fórmula final:
 `analysis.weather_candidate_audit.predict_totals_over_prob_weather_adjusted(payload, temp_f)`.
 Ver `docs/data_source_design.md`, sección "Resultado real de Weather1".
 
+**Wind1 (viento sobre Totales) -- ❌ NO ADOPTADO (2026-07-21)**: segunda
+extensión de clima, encima de Weather1 (mismo criterio: el baseline es
+Weather1 mismo). `wind_raw` ya estaba ingerido junto con `temp_f`, cero
+ingesta nueva. Resultado: `Δbrier=-0.000335` (CI `[-0.000601,-0.0000755]`,
+significativo -- la mejora es real, no ruido) pero **por debajo del
+umbral mínimo de tamaño de efecto** (`0.001`) -- no justifica el costo
+operativo de mantener el parseo de texto libre de MLB en producción. No
+se integra al orquestador; Weather1 sigue siendo la mejor fórmula de
+Totales. Ver `docs/data_source_design.md`, sección "Resultado real de
+Wind1".
+
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
 confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa
@@ -235,6 +246,16 @@ fecha opcional). No persiste proyecciones -- imprime JSON a stdout.
 se verificó en una segunda corrida real ese mismo día (run
 [29854712628](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29854712628)) --
 los 3 campos (T1b, F1, ML1b) funcionan juntos end-to-end sin errores.
+
+**✅ Automatizado (2026-07-21)**: pedido explícito del usuario. El
+orquestador ahora corre solo vía cron diario (`0 12 * * *`, ~7-8am hora
+del Este, después de que MLB suele publicar los abridores probables) y
+persiste cada corrida en tabla propia `live_projection` (append-only, para
+conservar el historial de cómo cambian las proyecciones a medida que se
+acerca la hora del juego). Verificado en vivo (run
+[29873344680](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29873344680)):
+15 filas persistidas sin errores, con las 5 probabilidades
+(T1b/Weather1/F1-Platt/ML1b/RL1-Platt) y `temp_f_forecast` en cada fila.
 
 ## Estructura
 

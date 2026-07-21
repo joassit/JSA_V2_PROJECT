@@ -564,6 +564,48 @@ y **verificada en vivo el mismo día** (run
 `temp_f_forecast=76.5`), `totals_over_prob` sube de `0.499` a `0.524`
 con el ajuste -- exactamente la dirección esperada.
 
+## Resultado real de Wind1 (viento sobre Totales) -- 2026-07-21, ❌ NO ADOPTADO
+
+Pedido explícito del usuario ("Con todo, haz todo lo que..."), segunda
+extensión de clima sobre la Línea 2. `wind_raw` ya estaba ingerido junto
+con `temp_f` en `weather_snapshot` (mismo `/feed/live`, **cero ingesta
+nueva**). `parse_wind_effect()` reduce el texto libre de MLB (ej. "10
+mph, Out To CF", "5 mph, In From LF") a un efecto firmado en mph:
+positivo si sopla "Out" (empuja la pelota, más carreras), negativo si
+sopla "In" (la frena), 0 en cruzado/calmo/no reconocido.
+
+**Hipótesis (`analysis/wind_candidate_audit.py::evaluate_wind1()`)**:
+mismo criterio metodológico que Weather1 -- el baseline es Weather1
+mismo (T1b + temperatura), no uno débil. La pregunta: ¿el viento aporta
+señal **nueva** más allá de lo que Weather1 ya predice?
+
+Corrida real (`wind_candidate_audit.yml`, run
+[29873346203](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29873346203),
+`conclusion=success`), 13,101 juegos, 100% cobertura:
+
+| | Brier |
+|---|---|
+| Weather1 (baseline, ya la mejor fórmula) | 0.24636 |
+| **Wind1 (Weather1 + ajuste por viento)** | **0.24603** |
+
+Coeficiente elegido por LOSO: `0.01`, estable en las 5 temporadas
+(`coef_stable_across_folds=true`). `delta_brier_mean=-0.000335` (CI
+`[-0.000601, -0.0000755]`, **significativo** -- la mejora es real y
+consistente, no ruido).
+
+**Sin embargo, NO cumple las 3 condiciones de adopción**:
+`effect_size_ok=false` -- el tamaño del efecto (`|Δbrier|=0.000335`) está
+**por debajo del umbral mínimo** de `0.001`. Es decir: el viento sí
+aporta una mejora *real* y *estadísticamente significativa*, pero
+demasiado pequeña para justificar el costo operativo de mantener el
+parseo de texto libre de MLB en producción.
+
+**❌ NO ADOPTADO** -- `meets_all_3_conditions=false`, veredicto del propio
+script. No se integra al orquestador en vivo; `Weather1` sigue siendo la
+mejor fórmula de Totales. Documentado como no-adopción deliberada, mismo
+criterio que T1-Platt/ML1-Platt: una mejora real que no vale la pena
+operacionalmente.
+
 ## Línea 1 -- Matchup Pitcher vs Lineup por mano (LHP/RHP)
 
 ### Qué se prueba
@@ -844,10 +886,31 @@ falta por integrar" más abajo). Ejemplo real: Cleveland Guardians
 (`home_starter_xera=2.73`), `park_factor=0.894` (Target Field, algo
 pitcher-friendly), `totals_over_prob=0.430`, `first5_home_win_prob=0.370`.
 
-**No autorizado todavía**: persistir estas proyecciones en una tabla
-propia, exponerlas via API/UI, o correr el orquestador en un cron
-automático -- este pipeline demuestra factibilidad end-to-end, la
-productización (si se decide) es una decisión aparte.
+**✅ Automatizado -- autorización explícita del usuario, 2026-07-21**
+("Con todo, haz todo lo que..."): el orquestador ahora corre solo, sin
+intervención manual, y persiste cada corrida.
+
+- **Cron diario**: `build_live_projections.yml` agregó `schedule: cron
+  "0 12 * * *"` (12:00 UTC, ~7-8am hora del Este en horario de verano)
+  junto al `workflow_dispatch` existente -- horario elegido para dar
+  tiempo a que MLB publique los abridores probables del día (típicamente
+  disponibles la noche anterior o temprano en la mañana).
+- **Persistencia**: tabla propia `live_projection` (`db/database.py`,
+  esquema propio -- no toca nada de `jsa/`), append-only (cada corrida
+  agrega filas nuevas, para conservar el historial de cómo cambiaron las
+  proyecciones a medida que se acercaba la hora del juego).
+  `scripts/build_live_projections.py::persist_projections()` guarda
+  `game_pk`, `game_date`, ambos equipos, las 5 probabilidades
+  (`totals_over_prob`, `totals_over_prob_weather_adjusted`,
+  `first5_home_win_prob`, `moneyline_home_win_prob`,
+  `runline_home_covers_prob`), `temp_f_forecast` y el payload completo.
+- **Verificado en vivo** (run
+  [29873344680](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29873344680),
+  `conclusion=success`, disparado manualmente sin `--date` para simular la
+  corrida de cron): **15 filas persistidas en `live_projection` sin
+  errores**, con los 5 campos de probabilidad y `temp_f_forecast`
+  presentes en cada fila (ej. `game_pk=824735`, `venue_id=3`,
+  `temp_f_forecast=71.5`, `totals_over_prob_weather_adjusted=0.455`).
 
 ### Qué falta por integrar (2026-07-21, tras adoptar ML1b)
 
