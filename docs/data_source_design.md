@@ -124,6 +124,50 @@ aporta señal predictiva detectable para el resultado del juego completo
 bajo este diseño -- queda documentado como territorio ya explorado, no
 como "sin ingesta todavía".
 
+## Resultado real de M3 (ERA del cerrador) -- 2026-07-20/21, spike confirmado, ingesta/audit en curso
+
+`jsa/historical/point_in_time_provider.py::bullpen_era_as_of()` (líneas
+234-276) YA calcula el ERA especifico de cada pitcher del roster
+ACTIVO point-in-time para promediar el ERA de bullpen, e identifica al
+cerrador (`closer_pitcher_id`, mas saves) -- pero descarta AMBOS datos
+después de derivar solo `home/away_closer_available` (bool) en
+`snapshot_reconstruction.py` líneas 78-132. `historical_snapshot.payload`
+nunca persiste el ERA propio del cerrador ni su identidad.
+
+Recalcular roster+stats ACTIVOS día por día (como hace
+`bullpen_era_as_of()`) para los 13,101 juegos x 2 equipos costaría
+~366,000 llamadas -- inviable. Spike de factibilidad real
+(`feasibility_spike_closer_era.yml`, run
+[29790959919](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29790959919)):
+alternativa mucho más barata -- el roster de TEMPORADA COMPLETA
+(`rosterType=fullSeason`, pool de candidatos) + `stats=gameLog` por
+pitcher (1 llamada, trae saves/earnedRuns/inningsPitched de CADA juego
+de la temporada) permiten reconstruir el ERA y los saves acumulados del
+cerrador día por día en Python (Camino 2 -- mismo principio que splits
+vs mano y chase rate: nunca pedirle a la API un corte point-in-time
+directo). Costo proyectado por el spike: ~4,050 llamadas totales
+(~26 pitchers/equipo x 30 equipos x 5 temporadas + roster), ~7s con 8
+workers -- aunque la experiencia con chase rate enseñó a no confiar
+ciegamente en la proyección de 1 sola llamada bajo carga paralela
+sostenida.
+
+**Limitación aceptada explícitamente**: el pool de candidatos usa el
+roster de temporada COMPLETA, no el roster ACTIVO de cada fecha de
+corte -- a diferencia de `bullpen_era_as_of()`, un pitcher que ya no
+está en el roster activo (trade/DFA/lesión) en una fecha específica
+igual se cuenta como candidato a cerrador si acumuló más saves hasta
+esa fecha. Efecto esperado: pequeño, dado que los cambios de cerrador
+por trade/DFA son poco frecuentes.
+
+Hipótesis M3: ¿mezclar el ERA específico del cerrador rival (peso
+elegido vía LEAVE-ONE-SEASON-OUT, mismo patrón que T1b/M2) con el
+bullpen ERA general del payload mejora la probabilidad de ganar el
+juego completo, comparado con el bullpen ERA general solo (mismo
+baseline que M1/M2 -- lo que ya usa `jsa/`)?
+`analysis/closer_era_candidate_audit.py` + `scripts/ingest_closer_era.py`
++ `scripts/run_m3_closer_era_audit.py`. Ingesta y candidate audit real
+pendientes de correr.
+
 ## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
 
 Corrida real (`t1_totals_candidate_audit.yml`, workflow_dispatch,

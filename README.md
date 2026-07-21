@@ -102,6 +102,18 @@ genuino**. El peso de disciplina óptimo saltó erráticamente entre folds
 LOSO (0.8/0.2/0.5/0.4/0.4, inestable) -- consistente con ruido. Ver
 `docs/data_source_design.md`, sección "Resultado real de M2".
 
+**M3 (ERA del cerrador) -- spike confirmado, ingesta/audit real
+pendiente (2026-07-20/21)**: `jsa/` ya calcula internamente el ERA
+específico de cada pitcher del roster (incluido el cerrador) para
+promediar el bullpen ERA, pero lo descarta después de derivar solo
+`closer_available` (bool). Roster de temporada completa + `stats=gameLog`
+por pitcher (confirmado en vivo) permiten reconstruir el ERA del
+cerrador día por día en Python -- mucho más barato que recalcular
+roster+stats activos diariamente. Hipótesis: mezclar el ERA del
+cerrador rival con el bullpen ERA general (peso vía LOSO) mejora la
+predicción del ganador, comparado contra el mismo baseline de M1/M2.
+Ver `docs/data_source_design.md`, sección "Resultado real de M3".
+
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
 confirmado accesible desde ahí (este sandbox de desarrollo NO tiene esa

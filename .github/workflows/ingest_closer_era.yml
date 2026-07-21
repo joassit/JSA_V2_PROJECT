@@ -1,0 +1,31 @@
+name: ingest_closer_era
+
+# workflow_dispatch manual. Escribe SOLO en el schema propio
+# (closer_era_snapshot, team_strength). Costo proyectado por el spike
+# (1 sola llamada): ~4,050 llamadas totales (roster fullSeason + gameLog
+# por pitcher), pero la experiencia con chase rate mostro que el costo
+# real bajo carga paralela sostenida puede ser mayor -- timeout amplio
+# por seguridad. El script salta equipos que ya tienen filas para esa
+# temporada sin --force, asi que una corrida cancelada por timeout se
+# puede re-disparar sin perder el trabajo ya hecho.
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Recalcular TODO desde cero, incluso equipos que ya tengan filas."
+        type: boolean
+        default: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/ingest_closer_era.py ${{ inputs.force && '--force' || '' }}
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}

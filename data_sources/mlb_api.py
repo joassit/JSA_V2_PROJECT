@@ -97,6 +97,51 @@ def get_game_play_by_play(game_pk: int, timeout: int = 15) -> dict | None:
         return None
 
 
+def get_team_roster_full_season(team_id: int, season: int, timeout: int = 15) -> dict | None:
+    """
+    JSON crudo de /teams/{team_id}/roster?rosterType=fullSeason -- pool
+    de candidatos a cerrador de la temporada completa (confirmado en
+    vivo, scripts/feasibility_spike_closer_era.py). Mas barato que
+    reconstruir el roster ACTIVO dia por dia (lo que hace
+    jsa/historical/point_in_time_provider.py::bullpen_era_as_of()) --
+    limitacion aceptada: incluye jugadores que ya no estaban activos en
+    una fecha de corte especifica (ej. tras un trade/DFA), documentado
+    en docs/data_source_design.md.
+    """
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/teams/{team_id}/roster",
+            params={"rosterType": "fullSeason", "season": season},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener roster fullSeason del equipo {team_id}: {e}")
+        return None
+
+
+def get_pitcher_game_log(pitcher_id: int, season: int, timeout: int = 15) -> dict | None:
+    """
+    JSON crudo de /people/{pitcher_id}/stats?stats=gameLog&group=pitching
+    -- saves/earnedRuns/inningsPitched por CADA juego que jugo ese
+    pitcher en la temporada, confirmado en vivo. Permite reconstruir el
+    ERA y los saves acumulados del cerrador dia por dia en Python (Camino
+    2), sin pedirle a la API un corte point-in-time directo.
+    """
+    try:
+        resp = _session.get(
+            f"{config.MLB_API_BASE}/people/{pitcher_id}/stats",
+            params={"stats": "gameLog", "group": "pitching", "season": season},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except (requests.RequestException, ValueError) as e:
+        logger.warning(f"No se pudo obtener gameLog del pitcher {pitcher_id}: {e}")
+        return None
+
+
 def get_pitcher_throws(pitcher_id: int, timeout: int = 15) -> str | None:
     """'L' o 'R', o None si falla. Nunca lanza."""
     try:

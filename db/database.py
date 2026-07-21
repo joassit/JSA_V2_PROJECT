@@ -125,6 +125,38 @@ class ChaseRateSnapshot(Base):
     )
 
 
+class CloserEraSnapshot(Base):
+    """
+    ERA especifico del cerrador de un equipo, congelado point-in-time --
+    `jsa/historical/point_in_time_provider.py::bullpen_era_as_of()` YA
+    calcula esto internamente (roster + stats por pitcher, identifica al
+    cerrador via most saves) pero lo descarta despues de derivar solo
+    `closer_available` (bool) -- ver docs/data_source_design.md,
+    "Resultado real de M3". Reconstruido dia por dia desde `gameLog` de
+    cada pitcher del roster de temporada completa (Camino 2 -- nunca le
+    pide a la API un corte point-in-time directo).
+    """
+    __tablename__ = "closer_era_snapshot"
+    __table_args__ = (
+        UniqueConstraint("team_id", "as_of_date", name="uq_closer_team_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    as_of_date: Mapped[str] = mapped_column(String, nullable=False)
+    season: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    closer_pitcher_id: Mapped[int | None] = mapped_column(Integer)
+    closer_era: Mapped[float | None] = mapped_column(Float)
+    closer_ip: Mapped[float] = mapped_column(Float, default=0.0)
+    closer_saves: Mapped[int] = mapped_column(Integer, default=0)
+
+    source: Mapped[str] = mapped_column(String, default="mlb_stats_api_gamelog")
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class PitcherMatchupFeature(Base):
     """
     Feature point-in-time-safe por juego: OPS del lineup rival contra la
