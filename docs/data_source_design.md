@@ -124,7 +124,7 @@ aporta señal predictiva detectable para el resultado del juego completo
 bajo este diseño -- queda documentado como territorio ya explorado, no
 como "sin ingesta todavía".
 
-## Resultado real de M3 (ERA del cerrador) -- 2026-07-20/21, spike confirmado, ingesta/audit en curso
+## Resultado real de M3 (ERA del cerrador) -- 2026-07-20/21, línea cerrada (nulo, no negativo)
 
 `jsa/historical/point_in_time_provider.py::bullpen_era_as_of()` (líneas
 234-276) YA calcula el ERA especifico de cada pitcher del roster
@@ -165,8 +165,42 @@ bullpen ERA general del payload mejora la probabilidad de ganar el
 juego completo, comparado con el bullpen ERA general solo (mismo
 baseline que M1/M2 -- lo que ya usa `jsa/`)?
 `analysis/closer_era_candidate_audit.py` + `scripts/ingest_closer_era.py`
-+ `scripts/run_m3_closer_era_audit.py`. Ingesta y candidate audit real
-pendientes de correr.
++ `scripts/run_m3_closer_era_audit.py`.
+
+**Ingesta real** (`ingest_closer_era.yml`, run
+[29791277090](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29791277090)):
+25,621 snapshots escritos, **0 errores** de roster ni de gameLog (el
+diseño más barato -- 1 roster call + N gameLog calls por equipo-temporada,
+no por equipo-fecha -- resultó también más limpio), 196.8s totales.
+
+**Candidate audit real** (`m3_closer_era_candidate_audit.yml`, run
+[29795851221](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29795851221)),
+13,101 juegos, 100% de cobertura (11,197/13,101 con al menos 1 ERA de
+cerrador resuelto en algún lado, fallback al bullpen ERA general en el
+resto):
+
+| Métrica | Modelo (M3: bullpen ERA mezclado con ERA del cerrador, peso vía LOSO) | Baseline (bullpen ERA general) |
+|---|---|---|
+| AUC | 0.55323 | 0.55320 |
+| Brier | 0.27682 | 0.27675 |
+
+`delta_brier_mean = +0.0000781` (CI `[-0.0000273, 0.000187]`, **cruza
+cero, NO significativo**, `|Δ|=0.0000781 << 0.001` umbral mínimo) --
+**0 de 3 condiciones**. Igual que M2, resultado nulo genuino (no un
+rechazo por dirección equivocada como T1/M1). Señal más contundente
+todavía que en M2: el peso óptimo elegido por LOSO fue **0.0 en 4 de
+las 5 temporadas** (2022, 2023, 2024, 2026 -- solo 2025 eligió 0.1) --
+en la inmensa mayoría de los folds, el propio proceso de selección
+prefirió NO mezclar el ERA del cerrador, la señal más clara posible de
+que no hay beneficio bajo este diseño. **Decisión: NO se adopta, línea
+cerrada.** El ERA específico del cerrador rival, mezclado linealmente
+con el bullpen ERA general, no aporta señal predictiva detectable para
+el resultado del juego completo -- consistente con la intuición de que
+el cerrador lanza una fracción muy pequeña de las entradas totales
+(~1 de 9), así que su ERA individual queda diluido frente al bullpen
+agregado salvo en el tramo final de juegos ya cerrados, contexto que
+esta formulación (aplicada a todo el juego, no solo a los últimos
+outs) no captura.
 
 ## Resultado real de T1 (Totales) -- 2026-07-20, línea cerrada
 
