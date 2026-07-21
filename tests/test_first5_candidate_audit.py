@@ -1,6 +1,10 @@
 import random
 
+import pytest
+
 from analysis.first5_candidate_audit import (
+    F1_PLATT_ADOPTED_A,
+    F1_PLATT_ADOPTED_B,
     F5_INNING_FRACTION,
     STARTER_WEIGHT_F5,
     baseline_full_game_win_prob,
@@ -10,13 +14,29 @@ from analysis.first5_candidate_audit import (
     predict_first5_home_win_prob,
     win_prob,
 )
+from analysis.stats_utils import platt_calibrate
 
 
-def test_predict_first5_home_win_prob_is_f1_alias():
-    # predict_first5_home_win_prob es la formula F1 ADOPTADA -- mismo
-    # objeto que f1_first5_win_prob, expuesta con nombre consistente a
-    # predict_totals_over_prob() (T1b).
-    assert predict_first5_home_win_prob is f1_first5_win_prob
+def test_predict_first5_home_win_prob_applies_platt_over_raw_f1():
+    # predict_first5_home_win_prob (F1-Platt, ADOPTADA 2026-07-21) ya NO
+    # es un alias directo de f1_first5_win_prob -- aplica calibracion
+    # logistica encima, porque la version cruda resulto estar mal
+    # calibrada de forma sistematica (ver evaluate_f1_platt_calibrated).
+    payload = {
+        "home_ops": 0.780, "away_ops": 0.720,
+        "home_starter_xera": 3.50, "away_starter_xera": 4.20,
+        "home_bullpen_era": 3.80, "away_bullpen_era": 4.00,
+        "league_avg_runs_per_game": 4.5, "league_avg_ops": 0.750, "league_avg_era": 4.30,
+        "park_factor": 1.0,
+    }
+    p_raw = f1_first5_win_prob(payload)
+    expected = platt_calibrate([p_raw], F1_PLATT_ADOPTED_A, F1_PLATT_ADOPTED_B)[0]
+    assert predict_first5_home_win_prob(payload) == pytest.approx(expected)
+    assert predict_first5_home_win_prob(payload) != p_raw
+
+
+def test_predict_first5_home_win_prob_none_when_payload_empty():
+    assert predict_first5_home_win_prob({}) is None
 
 
 def test_win_prob_equal_strength_is_symmetric_below_half():

@@ -29,7 +29,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from analysis.first5_candidate_audit import f1_first5_win_prob
+from analysis.first5_candidate_audit import predict_first5_home_win_prob
 from analysis.live_snapshot import aggregate_bullpen_era, compute_league_averages
 from analysis.moneyline_candidate_audit import predict_moneyline_home_win_prob
 from analysis.totals_candidate_audit import TOTALS_LINE, predict_totals_over_prob
@@ -148,7 +148,7 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
             "away_pitcher_id": away_pitcher_id,
             "totals_line": TOTALS_LINE,
             "totals_over_prob": predict_totals_over_prob(payload),
-            "first5_home_win_prob": f1_first5_win_prob(payload),
+            "first5_home_win_prob": predict_first5_home_win_prob(payload),
             "moneyline_home_win_prob": predict_moneyline_home_win_prob(payload),
             "payload": payload,
         })

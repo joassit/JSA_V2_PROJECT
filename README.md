@@ -67,15 +67,40 @@ todo el proyecto**. Adoptado por autorización explícita del usuario
 `analysis.totals_candidate_audit.predict_totals_over_prob(payload)`. Ver
 `docs/data_source_design.md`, sección "Resultado real de T1b".
 
-**F1 (First 5 Innings) -- ✅ ADOPTADO (2026-07-20/21)**: ground truth
-real ingerido (`linescore_game`, 13,099/13,101 juegos). Reponderación
-First5-específica (abridor domina, bullpen casi ausente, escalado a 5/9
-entradas) vs. proxy ingenuo (fórmula de juego completo).
-`Δbrier=-0.00165` (CI `[-0.00248,-0.00072]`, significativo, por encima
-del umbral) -- **segundo resultado positivo real** de esta sesión.
-Adoptado por autorización explícita del usuario (2026-07-21) -- fórmula
-final: `analysis.first5_candidate_audit.f1_first5_win_prob(payload)`
-(alias `predict_first5_home_win_prob`).
+**F1 (First 5 Innings) -- ✅ ADOPTADO, luego SUPERADO por F1-Platt (2026-07-20/21)**:
+ground truth real ingerido (`linescore_game`, 13,099/13,101 juegos).
+Reponderación First5-específica (abridor domina, bullpen casi ausente,
+escalado a 5/9 entradas) vs. proxy ingenuo (fórmula de juego completo).
+`Δbrier=-0.00165` (CI `[-0.00248,-0.00072]`, significativo) -- adoptada
+originalmente el 2026-07-21, SIN calibración de probabilidad (a
+diferencia de T1b). Al probar calibración logística (Platt scaling, ver
+más abajo) se descubrió que esta versión cruda estaba mal calibrada de
+forma sistemática -- **superada por F1-Platt**, que es ahora la fórmula
+real: `analysis.first5_candidate_audit.predict_first5_home_win_prob(payload)`
+(`f1_first5_win_prob(payload)` sigue expuesta como el insumo crudo antes
+de calibrar).
+
+**Calibración logística (Platt scaling) para T1, F1 y ML1 -- 2026-07-21**:
+pedido explícito del usuario para mejorar más allá del shrinkage lineal
+de 1 parámetro (`calibrate_prob`). Platt ajusta 2 parámetros
+(`p_cal=sigmoid(a·logit(p)+b)`) vía LOSO real, minimizando Brier (mismo
+criterio que el sweep de alpha). Resultado, comparando cada Platt contra
+la versión YA adoptada (mismos folds):
+
+- **T1-Platt**: `Δ=+0.00046` (CI `[0.00004,0.00088]`, significativo) --
+  **peor** que T1b lineal. Se mantiene T1b sin cambios.
+- **ML1-Platt**: `Δ=-0.00014` (CI `[-0.00076,0.00040]`, **no
+  significativo**) -- mejora indistinguible de ruido. Se mantiene ML1b
+  sin cambios (más simple, mismo resultado real).
+- **F1-Platt**: `Δ=-0.02477` (CI `[-0.02765,-0.02177]`, muy
+  significativo) -- **la mejora más grande de todo el proyecto** (5x más
+  grande que T1→T1b). `b` salió estable y negativo en las 5 temporadas
+  LOSO (`-0.153` a `-0.161`), señal de un sesgo sistemático real, no
+  ruido. **Adoptada** -- fórmula final:
+  `F1_PLATT_ADOPTED_A=0.1032248796519753`,
+  `F1_PLATT_ADOPTED_B=-0.15656001534780914` (ajustados sobre las 5
+  temporadas completas, no solo LOSO). Ver
+  `docs/data_source_design.md`, sección "Resultado real de F1-Platt".
 
 **M1 (Matchup por mano) -- ❌ NO pasa las 3 condiciones, línea cerrada
 (2026-07-20)**: bug real encontrado y corregido durante la sesión --

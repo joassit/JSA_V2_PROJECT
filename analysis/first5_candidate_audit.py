@@ -53,14 +53,15 @@ def baseline_full_game_win_prob(payload: dict) -> float | None:
 
 def f1_first5_win_prob(payload: dict) -> float | None:
     """
-    Formula ADOPTADA de First 5 Innings (F1) -- autorizado explicitamente
-    por el usuario, 2026-07-21 (ver docs/data_source_design.md,
-    "Resultado real de F1"): delta_brier_mean=-0.00165 (CI
-    [-0.00248,-0.00072], significativo, |delta|>=0.001, las 3 condiciones
-    se cumplen). Reponderado hacia el abridor (STARTER_WEIGHT_F5=0.90) +
-    escalado a 5/9 entradas -- esta es la formula de F5 recomendada para
-    cualquier uso futuro de este proyecto, en vez de usar la probabilidad
-    de ganar el juego completo como proxy.
+    F1 CRUDO (sin calibrar) -- reponderado hacia el abridor
+    (STARTER_WEIGHT_F5=0.90) + escalado a 5/9 entradas. Adoptado
+    originalmente asi el 2026-07-21 (delta_brier_mean=-0.00165 vs. el
+    proxy de juego completo), pero SUPERADO por F1-Platt (ver
+    `predict_first5_home_win_prob()` mas abajo) -- este resultado
+    demostro que la version cruda estaba mal calibrada de forma
+    sistematica (b estable ~-0.155 en las 5 temporadas LOSO). Se
+    mantiene expuesta porque sigue siendo el insumo de la version
+    calibrada, y para que quede visible el "antes" de la comparacion.
     """
     pair = project_runs_pair(payload, starter_weight=STARTER_WEIGHT_F5)
     if pair is None:
@@ -69,11 +70,31 @@ def f1_first5_win_prob(payload: dict) -> float | None:
     return win_prob(mu_home * F5_INNING_FRACTION, mu_away * F5_INNING_FRACTION)
 
 
-# Alias con nombre consistente a predict_totals_over_prob() (T1b) --
-# misma funcion, expuesta con el prefijo `predict_` para que un futuro
-# consumidor externo encuentre ambas formulas adoptadas con el mismo
-# patron de nombres.
-predict_first5_home_win_prob = f1_first5_win_prob
+# --- F1-Platt ADOPTADO (autorizado explicitamente por el usuario, 2026-07-21) ---
+# Calibracion logistica ajustada sobre las 5 temporadas COMPLETAS
+# (13,099 juegos, sin excluir ninguna -- LOSO es solo para validar que
+# la mejora generaliza, ver evaluate_f1_platt_calibrated()).
+# delta_brier vs. F1 sin calibrar = -0.02477 (CI [-0.02765,-0.02177],
+# muy significativo) -- la mejora mas grande de todo el proyecto, mayor
+# incluso que T1 crudo -> T1b. Reemplaza a f1_first5_win_prob() como la
+# formula recomendada de First 5 para cualquier uso futuro.
+F1_PLATT_ADOPTED_A = 0.1032248796519753
+F1_PLATT_ADOPTED_B = -0.15656001534780914
+
+
+def predict_first5_home_win_prob(payload: dict) -> float | None:
+    """
+    Formula ADOPTADA de First 5 Innings (F1-Platt) -- autorizado
+    explicitamente por el usuario, 2026-07-21 (ver
+    docs/data_source_design.md, "Resultado real de F1-Platt"):
+    f1_first5_win_prob() (reponderado + escalado) ->
+    platt_calibrate(a=F1_PLATT_ADOPTED_A, b=F1_PLATT_ADOPTED_B). None si
+    el payload no permite proyectar.
+    """
+    p_raw = f1_first5_win_prob(payload)
+    if p_raw is None:
+        return None
+    return platt_calibrate([p_raw], F1_PLATT_ADOPTED_A, F1_PLATT_ADOPTED_B)[0]
 
 
 def evaluate_f1(games: list[dict], n_resamples: int = 500, seed: int = 20260720) -> dict:

@@ -391,6 +391,72 @@ mismo día -- pendiente de una corrida de verificación en vivo con
 calendario real (la corrida confirmada del 2026-07-21 fue anterior a esta
 integración).
 
+## Calibración logística (Platt scaling) para T1/F1/ML1 -- 2026-07-21
+
+Pedido explícito del usuario ("Ahora como calibramos mejor?" → "Si,
+hazlo") para probar si una calibración mas expresiva que el shrinkage
+lineal de 1 parámetro (`calibrate_prob(p,alpha)=0.5+alpha*(p-0.5)`)
+mejora sobre lo ya adoptado. Calibración logística (Platt scaling, 2
+parámetros): `p_cal = sigmoid(a·logit(p) + b)`, ajustada via
+`fit_platt_params()`/`platt_calibrate()` (`analysis/stats_utils.py`)
+minimizando el mismo Brier score (no log-loss, para que la comparación
+con el shrinkage lineal sea justa). Mismo procedimiento LEAVE-ONE-
+SEASON-OUT que T1b/ML1b: `(a,b)` se ajustan SOLO en las otras 4
+temporadas por fold.
+
+Corrida real (`platt_calibration_audit.yml`, runs
+[29856242622](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29856242622)
+y [29857663165](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29857663165)),
+comparando cada Platt contra el baseline correspondiente Y contra la
+versión ya adoptada (mismos juegos/folds):
+
+| Hipótesis | Brier baseline | Brier version adoptada | Brier Platt (LOSO) | Δ vs. adoptada | ¿Cambia? |
+|---|---|---|---|---|---|
+| T1 → T1b | 0.25324 | 0.24819 (lineal) | 0.24865 | **+0.00046** (CI `[0.00004,0.00088]`, significativo) | No -- Platt es peor |
+| ML1 → ML1b | 0.24891 | 0.24762 (lineal) | 0.24748 | -0.00014 (CI `[-0.00076,0.00040]`, no significativo) | No -- indistinguible de ruido, se mantiene la version mas simple |
+| F1 | 0.27340 | 0.27175 (sin calibrar) | **0.24698** | **-0.02477** (CI `[-0.02765,-0.02177]`, muy significativo) | **Sí -- adoptada** |
+
+### Resultado real de F1-Platt -- 2026-07-21, ✅ ADOPTADO (reemplaza a F1 sin calibrar)
+
+F1 nunca había tenido un paso de calibración de probabilidad -- la
+formula adoptada originalmente (`f1_first5_win_prob`) era solo
+reponderación + escalado, sin `calibrate_prob`. Al someterla a Platt se
+descubrió que estaba **mal calibrada de forma sistemática**: el
+parámetro `b` salió negativo y estable en las 5 temporadas LOSO
+(`-0.1558`, `-0.1546`, `-0.1608`, `-0.1582`, `-0.1539`) -- una desviación
+consistente, no ruido de muestreo. Corregirla resultó en la mejora mas
+grande de todo el proyecto: `Δbrier=-0.02477` (CI
+`[-0.02765,-0.02177]`) vs. la version sin calibrar, y `Δbrier=-0.02642`
+(CI `[-0.02939,-0.02342]`) vs. el baseline (proxy de juego completo) --
+**5 veces mas grande** que la mejora de T1→T1b.
+
+Parámetros finales de producción (ajustados sobre las 5 temporadas
+COMPLETAS, 13,099 juegos, sin excluir ninguna -- LOSO es solo para
+validar que la mejora generaliza, no para elegir la constante):
+`a=0.1032248796519753`, `b=-0.15656001534780914`.
+
+**✅ ADOPTADO -- autorización explícita del usuario, 2026-07-21** ("Si",
+en respuesta directa a la propuesta de adoptar F1-Platt). Fórmula final:
+`analysis.first5_candidate_audit.predict_first5_home_win_prob(payload)`
+-- `f1_first5_win_prob()` (reponderado + escalado, ahora expuesto como
+insumo crudo, ya NO es la formula recomendada por si sola) →
+`platt_calibrate(a=F1_PLATT_ADOPTED_A, b=F1_PLATT_ADOPTED_B)`. Integrada
+al orquestador de proyecciones en vivo
+(`scripts/build_live_projections.py`) el mismo día -- pendiente de
+verificación en vivo con calendario real (ver "Qué falta por integrar"
+en la sección de Proyecciones en vivo).
+
+**T1-Platt y ML1-Platt: sin cambios.** Ambos casos muestran que el
+shrinkage lineal de 1 parámetro ya adoptado es igual de bueno (ML1) o
+mejor (T1) que la calibración logística de 2 parámetros -- no hay
+justificación para la complejidad adicional. Interpretación: T1b/ML1b ya
+corregían bien el tipo de miscalibración presente en esos 2 casos
+(sobreconfianza proporcional, uniforme en todo el rango), mientras que
+F1 tenía un sesgo sistemático de un tipo distinto (desplazamiento
+aditivo en espacio logit) que el shrinkage lineal simple no podía
+corregir -- consistente con que F1 nunca había pasado por NINGUNA
+calibración antes.
+
 ## Línea 1 -- Matchup Pitcher vs Lineup por mano (LHP/RHP)
 
 ### Qué se prueba
@@ -707,6 +773,13 @@ productización (si se decide) es una decisión aparte.
 4. **`candidate_audit_result`** ya tiene ambas filas (ML1 crudo + ML1b
    calibrado) persistidas por `scripts/run_moneyline_candidate_audit.py`
    (`run_id=ml1-moneyline-20260721T161545-1278d8c1`) -- sin pendientes ahí.
+5. **Verificación en vivo de F1-Platt (pendiente)**: `predict_first5_home_win_prob()`
+   ahora aplica Platt en vez de ser un alias directo de `f1_first5_win_prob()`
+   -- el orquestador (`scripts/build_live_projections.py`) ya se
+   actualizó para usarlo, pero todavía no se dispachó
+   `build_live_projections.yml` con este cambio incluido (la última
+   corrida verificada, run 29854712628, usaba la version sin calibrar).
+   Mismo paso pendiente que el item #1 tuvo para ML1b.
 
 ## Prioridad recomendada
 
