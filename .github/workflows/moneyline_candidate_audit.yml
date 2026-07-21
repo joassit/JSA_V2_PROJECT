@@ -1,0 +1,22 @@
+name: moneyline_candidate_audit
+
+# workflow_dispatch manual. Corre ML1 (crudo) + ML1b (calibrado via LOSO)
+# contra el historico real compartido (solo lectura) y persiste ambos
+# resultados en candidate_audit_result (schema propio). Cero ingesta
+# nueva -- ver analysis/moneyline_candidate_audit.py.
+on:
+  workflow_dispatch: {}
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python scripts/run_moneyline_candidate_audit.py
+        env:
+          JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
