@@ -20,9 +20,13 @@ Distinto de todo lo point-in-time historico de este proyecto: "hoy" ya ES
 el corte, no hace falta reconstruir nada dia por dia -- stats=season de la
 API ya trae el acumulado correcto.
 
-Nunca escribe en la base de datos (solo lee ParkFactor); no persiste
-proyecciones -- imprime JSON a stdout para que el consumidor (o una futura
-tabla) decida que hacer con el resultado.
+Persiste cada corrida en la tabla propia `live_projection` (ademas de
+imprimir JSON a stdout) -- autorizado explicitamente por el usuario
+("Con todo, haz todo lo que...", 2026-07-21) para poder correr este
+script por cron sin intervencion manual, ver
+.github/workflows/build_live_projections.yml (`schedule:`). Cada corrida
+agrega filas nuevas (no actualiza in place) para conservar como cambio
+la proyeccion a medida que se acercaba el juego real.
 """
 
 from __future__ import annotations
@@ -48,7 +52,7 @@ from data_sources.mlb_api import (
     parse_era_ip_from_season_stats, parse_ops_from_season_stats, parse_schedule_games,
     parse_venue_coordinates,
 )
-from db.database import ParkFactor, SessionLocal
+from db.database import LiveProjection, ParkFactor, SessionLocal, init_db
 
 MAX_WORKERS = 8
 
@@ -190,6 +194,27 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
     return results
 
 
+def persist_projections(results: list[dict], target_date: str) -> None:
+    """Agrega una fila nueva por juego -- no actualiza in place, para
+    conservar el historial de como cambio la proyeccion en corridas
+    sucesivas del mismo dia (cron)."""
+    init_db()
+    with SessionLocal() as session:
+        for r in results:
+            session.add(LiveProjection(
+                game_pk=r["game_pk"], game_date=target_date,
+                home_team_id=r["home_team_id"], away_team_id=r["away_team_id"],
+                totals_over_prob=r["totals_over_prob"],
+                totals_over_prob_weather_adjusted=r["totals_over_prob_weather_adjusted"],
+                first5_home_win_prob=r["first5_home_win_prob"],
+                moneyline_home_win_prob=r["moneyline_home_win_prob"],
+                runline_home_covers_prob=r["runline_home_covers_prob"],
+                temp_f_forecast=r["temp_f_forecast"],
+                payload=r["payload"],
+            ))
+        session.commit()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--date", default=None, help="YYYY-MM-DD (default: hoy)")
@@ -203,6 +228,9 @@ def main() -> int:
     results = build_live_projections(target_date, season)
     print(json.dumps(results, indent=2, ensure_ascii=False))
     print(f"{len(results)} juegos proyectados.", file=sys.stderr)
+
+    persist_projections(results, target_date)
+    print(f"{len(results)} filas persistidas en live_projection.", file=sys.stderr)
     return 0
 
 

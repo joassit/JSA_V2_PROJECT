@@ -204,6 +204,38 @@ class WeatherSnapshot(Base):
     )
 
 
+class LiveProjection(Base):
+    """
+    Proyeccion EN VIVO persistida de un juego futuro -- salida de
+    scripts/build_live_projections.py, ahora corrida automaticamente por
+    cron (ver .github/workflows/build_live_projections.yml) en vez de
+    solo imprimir JSON a stdout. `game_pk` + `computed_at` como clave
+    compuesta implicita (se recalcula cada corrida, no se actualiza in
+    place) para conservar el historial de como cambio la proyeccion a
+    medida que se acercaba el juego (OPS/ERA/clima se actualizan).
+    """
+    __tablename__ = "live_projection"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    game_pk: Mapped[int] = mapped_column(Integer, nullable=False)
+    game_date: Mapped[str] = mapped_column(String, nullable=False)
+    home_team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    away_team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    totals_over_prob: Mapped[float | None] = mapped_column(Float)
+    totals_over_prob_weather_adjusted: Mapped[float | None] = mapped_column(Float)
+    first5_home_win_prob: Mapped[float | None] = mapped_column(Float)
+    moneyline_home_win_prob: Mapped[float | None] = mapped_column(Float)
+    runline_home_covers_prob: Mapped[float | None] = mapped_column(Float)
+
+    temp_f_forecast: Mapped[float | None] = mapped_column(Float)
+    payload: Mapped[dict | None] = mapped_column(JSON)
+
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class PitcherMatchupFeature(Base):
     """
     Feature point-in-time-safe por juego: OPS del lineup rival contra la

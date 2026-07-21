@@ -1,11 +1,18 @@
 name: build_live_projections
 
-# workflow_dispatch manual. Arma el payload de cada juego del dia (OPS,
-# ERA de abridor probable, ERA de bullpen ponderado por IP, park factor
-# ya calculado) y aplica las formulas ADOPTADAS (T1b, F1) -- ver
-# scripts/build_live_projections.py. Solo LEE ParkFactor de la base
-# compartida (mismo rol de solo escritura en team_strength / solo
-# lectura en public que el resto del proyecto) -- no escribe nada.
+# workflow_dispatch manual O cron diario (autorizado explicitamente por
+# el usuario, 2026-07-21, para correr sin intervencion manual). Arma el
+# payload de cada juego del dia (OPS, ERA de abridor probable, ERA de
+# bullpen ponderado por IP, park factor ya calculado, pronostico de
+# clima) y aplica las formulas ADOPTADAS (T1b, Weather1, F1-Platt, ML1b,
+# RL1-Platt) -- ver scripts/build_live_projections.py. Persiste cada
+# corrida en `live_projection` (schema propio) ademas de imprimir JSON.
+#
+# 12:00 UTC (~7-8am hora del Este segun horario de verano) -- horario
+# elegido para dar tiempo a que MLB publique los abridores probables del
+# dia (tipicamente disponibles la noche anterior o temprano en la
+# mañana), sin ser tan tarde como para perderse juegos con horario de
+# tarde/dia.
 on:
   workflow_dispatch:
     inputs:
@@ -13,6 +20,8 @@ on:
         description: "Fecha YYYY-MM-DD (vacio = hoy)"
         required: false
         default: ""
+  schedule:
+    - cron: "0 12 * * *"
 
 jobs:
   build:
@@ -25,10 +34,10 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements.txt
       - run: python scripts/build_live_projections.py --date "${{ github.event.inputs.date }}"
-        if: ${{ github.event.inputs.date != '' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.date != '' }}
         env:
           JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
       - run: python scripts/build_live_projections.py
-        if: ${{ github.event.inputs.date == '' }}
+        if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.date == '' }}
         env:
           JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
