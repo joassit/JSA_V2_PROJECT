@@ -1,9 +1,15 @@
 import random
 
+import pytest
+
 from analysis.totals_candidate_audit import (
     ALPHA_CANDIDATES,
+    T1B_ADOPTED_ALPHA,
     calibrate_prob,
     evaluate_t1b_calibrated,
+    poisson_over_prob,
+    predict_totals_over_prob,
+    project_total_runs,
 )
 
 
@@ -80,3 +86,24 @@ def test_evaluate_t1b_returns_expected_keys():
 
 def test_alpha_candidates_include_uncalibrated_case():
     assert 1.0 in ALPHA_CANDIDATES
+
+
+def test_t1b_adopted_alpha_matches_documented_result():
+    # alpha=0.2 fue optimo en las 5 temporadas sin excepcion (LOSO real,
+    # ver docs/data_source_design.md) -- la formula adoptada debe usar
+    # exactamente ese valor.
+    assert T1B_ADOPTED_ALPHA == 0.2
+
+
+def test_predict_totals_over_prob_matches_manual_pipeline():
+    payload = {
+        "league_avg_runs_per_game": 4.5, "league_avg_ops": 0.750, "league_avg_era": 4.30,
+        "park_factor": 1.0, "home_ops": 0.780, "away_ops": 0.720,
+    }
+    mu = project_total_runs(payload)
+    expected = calibrate_prob(poisson_over_prob(mu), T1B_ADOPTED_ALPHA)
+    assert predict_totals_over_prob(payload) == pytest.approx(expected)
+
+
+def test_predict_totals_over_prob_none_when_payload_empty():
+    assert predict_totals_over_prob({}) is None

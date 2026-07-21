@@ -50,12 +50,28 @@ def baseline_full_game_win_prob(payload: dict) -> float | None:
 
 
 def f1_first5_win_prob(payload: dict) -> float | None:
-    """Candidato F1: reponderado hacia el abridor + escalado a 5/9 entradas."""
+    """
+    Formula ADOPTADA de First 5 Innings (F1) -- autorizado explicitamente
+    por el usuario, 2026-07-21 (ver docs/data_source_design.md,
+    "Resultado real de F1"): delta_brier_mean=-0.00165 (CI
+    [-0.00248,-0.00072], significativo, |delta|>=0.001, las 3 condiciones
+    se cumplen). Reponderado hacia el abridor (STARTER_WEIGHT_F5=0.90) +
+    escalado a 5/9 entradas -- esta es la formula de F5 recomendada para
+    cualquier uso futuro de este proyecto, en vez de usar la probabilidad
+    de ganar el juego completo como proxy.
+    """
     pair = project_runs_pair(payload, starter_weight=STARTER_WEIGHT_F5)
     if pair is None:
         return None
     mu_home, mu_away = pair
     return win_prob(mu_home * F5_INNING_FRACTION, mu_away * F5_INNING_FRACTION)
+
+
+# Alias con nombre consistente a predict_totals_over_prob() (T1b) --
+# misma funcion, expuesta con el prefijo `predict_` para que un futuro
+# consumidor externo encuentre ambas formulas adoptadas con el mismo
+# patron de nombres.
+predict_first5_home_win_prob = f1_first5_win_prob
 
 
 def evaluate_f1(games: list[dict], n_resamples: int = 500, seed: int = 20260720) -> dict:

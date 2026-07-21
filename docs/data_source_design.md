@@ -4,7 +4,7 @@ Mismo criterio que `jsa/docs/statcast_integration_design.md` en el repo
 hermano: este documento plantea hipótesis y protocolo de validación
 **antes de escribir ingesta real**, no decide que algo se adopta.
 
-## Resultado real de F1 (First 5 Innings) -- 2026-07-20, PASA las 3 condiciones
+## Resultado real de F1 (First 5 Innings) -- 2026-07-20, ✅ ADOPTADO (2026-07-21)
 
 Corrida real (`f1_first5_candidate_audit.yml`, run
 [29715571041](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715571041)),
@@ -31,8 +31,16 @@ pregunta original de la propuesta, ahora respondida con ground truth
 real que no existía antes de esta sesión (`linescore_game`, ingerido
 2026-07-20).
 
-**Documentado como candidato validado, sin adopción automática** (mismo
-criterio de gobernanza que el resto del ecosistema).
+**✅ ADOPTADO -- autorización explícita del usuario, 2026-07-21**
+("Adóptalas", referido a T1b y F1 juntas). Fórmula final:
+`analysis.first5_candidate_audit.f1_first5_win_prob(payload)` (alias
+`predict_first5_home_win_prob`) -- `STARTER_WEIGHT_F5=0.90`,
+`F5_INNING_FRACTION=5/9`, sin parámetros adicionales que calibrar (a
+diferencia de T1b, F1 no necesitó una búsqueda de hiperparámetro vía
+LOSO -- la reponderación conceptual `starter_weight=0.90` ya superó al
+baseline tal cual). Esta es la fórmula recomendada para predecir el
+ganador de First 5 Innings en cualquier uso futuro de este proyecto, en
+vez de usar la probabilidad de ganar el juego completo como proxy.
 
 ## Resultado real de M1 (Matchup por mano) -- 2026-07-20, línea cerrada
 
@@ -248,7 +256,7 @@ implementación (Poisson sin calibrar, línea fija 8.5) de la proyección de
 Totales derivada de `historical_snapshot` -- no el concepto general de
 especialización por mercado de Totales.
 
-## Resultado real de T1b (Totales calibrado) -- 2026-07-20, PASA las 3 condiciones
+## Resultado real de T1b (Totales calibrado) -- 2026-07-20, ✅ ADOPTADO (2026-07-21)
 
 Corrida real (`t1b_calibrated_audit.yml`, run
 [29715127665](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29715127665)),
@@ -291,12 +299,14 @@ calibradas y el resultado supera al baseline de forma consistente.
 
 **Este es el primer resultado positivo real de todo este proyecto (y de
 las líneas evaluadas en esta sesión) que cumple las 3 condiciones.**
-Sigue la misma regla de gobernanza que el resto del ecosistema: **no se
-adopta automáticamente** -- queda documentado como candidato validado,
-pendiente de decisión explícita del usuario sobre si/cómo usarlo (este
-proyecto no tiene todavía un sistema de picks en vivo; "adoptar" aquí
-significaría, como mínimo, fijar `project_total_runs() + calibrate_prob(alpha=0.2)`
-como la fórmula de Totales recomendada para cualquier uso futuro).
+
+**✅ ADOPTADO -- autorización explícita del usuario, 2026-07-21**
+("Adóptalas", referido a T1b y F1 juntas). Fórmula final:
+`analysis.totals_candidate_audit.predict_totals_over_prob(payload, line=8.5)`
+-- `project_total_runs()` → `poisson_over_prob()` →
+`calibrate_prob(alpha=T1B_ADOPTED_ALPHA=0.2)`. Esta es la fórmula de
+Totales recomendada para cualquier uso futuro de este proyecto, en vez
+de la proyección cruda sin calibrar (T1, cerrada) o el baseline de liga.
 
 **Aviso de alcance honesto**: este sandbox no tiene salida de red hacia
 `statsapi.mlb.com` (confirmado: `CONNECT` devuelve 403 del proxy del

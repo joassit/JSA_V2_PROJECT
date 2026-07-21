@@ -6,8 +6,16 @@ from analysis.first5_candidate_audit import (
     baseline_full_game_win_prob,
     evaluate_f1,
     f1_first5_win_prob,
+    predict_first5_home_win_prob,
     win_prob,
 )
+
+
+def test_predict_first5_home_win_prob_is_f1_alias():
+    # predict_first5_home_win_prob es la formula F1 ADOPTADA -- mismo
+    # objeto que f1_first5_win_prob, expuesta con nombre consistente a
+    # predict_totals_over_prob() (T1b).
+    assert predict_first5_home_win_prob is f1_first5_win_prob
 
 
 def test_win_prob_equal_strength_is_symmetric_below_half():

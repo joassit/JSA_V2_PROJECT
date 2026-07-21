@@ -57,22 +57,25 @@ baseline de liga (`Δbrier=+0.0347`) -- pero con mayor AUC (0.558 vs
 0.521), señal de que la proyección SÍ tenía información real, solo mal
 calibrada (probabilidades demasiado extremas).
 
-**T1b (Totales calibrado) -- ✅ PASA las 3 condiciones (2026-07-20)**:
-misma proyección + contracción hacia 0.5 (`alpha`), elegido vía
+**T1b (Totales calibrado) -- ✅ ADOPTADO (2026-07-20/21)**: misma
+proyección + contracción hacia 0.5 (`alpha`), elegido vía
 leave-one-season-out real. `alpha=0.2` óptimo en las 5 temporadas **sin
 excepción**. `Δbrier=-0.00505` (CI `[-0.00637, -0.00364]`, significativo,
 por encima del umbral mínimo) -- **primer resultado positivo real de
-todo el proyecto**. No se adopta automáticamente (mismo criterio de
-gobernanza que el resto del ecosistema) -- ver `docs/data_source_design.md`,
-sección "Resultado real de T1b", para el detalle completo y qué
-significaría "adoptarlo".
+todo el proyecto**. Adoptado por autorización explícita del usuario
+(2026-07-21) -- fórmula final:
+`analysis.totals_candidate_audit.predict_totals_over_prob(payload)`. Ver
+`docs/data_source_design.md`, sección "Resultado real de T1b".
 
-**F1 (First 5 Innings) -- ✅ PASA las 3 condiciones (2026-07-20)**:
-ground truth real ingerido (`linescore_game`, 13,099/13,101 juegos).
-Reponderación First5-específica (abridor domina, bullpen casi ausente,
-escalado a 5/9 entradas) vs. proxy ingenuo (fórmula de juego completo).
+**F1 (First 5 Innings) -- ✅ ADOPTADO (2026-07-20/21)**: ground truth
+real ingerido (`linescore_game`, 13,099/13,101 juegos). Reponderación
+First5-específica (abridor domina, bullpen casi ausente, escalado a 5/9
+entradas) vs. proxy ingenuo (fórmula de juego completo).
 `Δbrier=-0.00165` (CI `[-0.00248,-0.00072]`, significativo, por encima
 del umbral) -- **segundo resultado positivo real** de esta sesión.
+Adoptado por autorización explícita del usuario (2026-07-21) -- fórmula
+final: `analysis.first5_candidate_audit.f1_first5_win_prob(payload)`
+(alias `predict_first5_home_win_prob`).
 
 **M1 (Matchup por mano) -- ❌ NO pasa las 3 condiciones, línea cerrada
 (2026-07-20)**: bug real encontrado y corregido durante la sesión --

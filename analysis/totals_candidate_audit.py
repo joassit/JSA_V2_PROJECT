@@ -141,6 +141,28 @@ def calibrate_prob(p_raw: float, alpha: float) -> float:
     return 0.5 + alpha * (p_raw - 0.5)
 
 
+# --- T1b ADOPTADO (autorizado explicitamente por el usuario, 2026-07-21) ---
+# alpha=0.2 fue optimo en las 5 temporadas SIN excepcion via LOSO real
+# (ver docs/data_source_design.md, "Resultado real de T1b") --
+# delta_brier_mean=-0.00505 (CI [-0.00637,-0.00364], significativo,
+# |delta|>=0.001, las 3 condiciones se cumplen). Esta es la formula de
+# Totales recomendada para cualquier uso futuro de este proyecto.
+T1B_ADOPTED_ALPHA = 0.2
+
+
+def predict_totals_over_prob(payload: dict, line: float = TOTALS_LINE) -> float | None:
+    """
+    Formula ADOPTADA de Totales (T1b): project_total_runs() ->
+    poisson_over_prob() -> calibrate_prob(alpha=T1B_ADOPTED_ALPHA).
+    P(carreras totales > line). None si el payload no permite proyectar.
+    """
+    mu_total = project_total_runs(payload)
+    if mu_total is None:
+        return None
+    p_raw = poisson_over_prob(mu_total, line)
+    return calibrate_prob(p_raw, T1B_ADOPTED_ALPHA)
+
+
 def _prepare_series(games: list[dict]) -> dict:
     """
     Un solo paso de filtrado/calculo reusado por evaluate_t1() y
