@@ -773,13 +773,14 @@ productización (si se decide) es una decisión aparte.
 4. **`candidate_audit_result`** ya tiene ambas filas (ML1 crudo + ML1b
    calibrado) persistidas por `scripts/run_moneyline_candidate_audit.py`
    (`run_id=ml1-moneyline-20260721T161545-1278d8c1`) -- sin pendientes ahí.
-5. **Verificación en vivo de F1-Platt (pendiente)**: `predict_first5_home_win_prob()`
-   ahora aplica Platt en vez de ser un alias directo de `f1_first5_win_prob()`
-   -- el orquestador (`scripts/build_live_projections.py`) ya se
-   actualizó para usarlo, pero todavía no se dispachó
-   `build_live_projections.yml` con este cambio incluido (la última
-   corrida verificada, run 29854712628, usaba la version sin calibrar).
-   Mismo paso pendiente que el item #1 tuvo para ML1b.
+5. ~~Verificación en vivo de F1-Platt~~ -- **✅ resuelto** (run
+   [29857979853](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29857979853),
+   `conclusion=success`): comparando contra la corrida anterior (run
+   29854712628, F1 sin calibrar) sobre el mismo juego real
+   (`game_pk=823114`, SEA vs. CIN), `first5_home_win_prob` pasó de
+   `0.216` (extremo) a `0.428` con F1-Platt -- exactamente la corrección
+   de sobreconfianza sistemática que predijo el análisis LOSO. Sin
+   errores en los 15 juegos del calendario real.
 
 ## Prioridad recomendada
 
