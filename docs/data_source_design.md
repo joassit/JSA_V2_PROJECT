@@ -495,7 +495,7 @@ mismo día** (run
 `conclusion=success`): ej. `game_pk=823519` (NYY vs. PIT),
 `runline_home_covers_prob=0.376`.
 
-## Resultado real de Weather1 (clima sobre Totales) -- EN PROGRESO (2026-07-21)
+## Resultado real de Weather1 (clima sobre Totales) -- 2026-07-21, ✅ ADOPTADO
 
 Pedido explícito del usuario ("agregamos un API") tras confirmar en vivo
 (`scripts/feasibility_spike_weather.py`, corregido tras un bug real de
@@ -503,20 +503,28 @@ falso positivo con `{}` vacío) que MLB Stats API expone clima real
 (`temp`, `condition`, `wind`) vía `/game/{gamePk}/feed/live` (v1.1) --
 pero **solo DESPUÉS de que el juego ocurre**, nunca antes (un juego
 programado de hoy trae `gameData.weather={}`). Esto separa el trabajo en
-2 piezas independientes:
+3 piezas, todas completadas:
 
 1. **Ingesta histórica** (`scripts/ingest_weather.py`, tabla propia
-   `weather_snapshot`): en curso, dispatchada
-   (`ingest_weather.yml`) -- 13,101 juegos, paralelizado 12 workers,
-   timeout de 180 min (similar orden de magnitud al ingest de Chase Rate,
-   ~75 min para 25,621 snapshots).
+   `weather_snapshot`): **completa** (`ingest_weather.yml`, run
+   [29867525431](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29867525431)) --
+   13,101/13,101 juegos, 0 errores, en solo 5.2 minutos (mucho más
+   rápido que el ingest de Chase Rate, ~75 min para 25,621 snapshots --
+   `/feed/live` resultó más liviano de lo proyectado bajo carga
+   paralela).
 2. **Pronóstico en vivo** (`data_sources/mlb_api.py::get_forecast_temperature()`,
    Open-Meteo, gratis, sin API key): **confirmado en vivo**
    (`feasibility_spike_open_meteo.yml`, run
-   [29867527216](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29867527216),
-   `conclusion=success`) -- pronóstico real de temperatura para Yankee
-   Stadium, ej. 74-78°F para hoy en el horario típico de primer pitch
-   (18-21h), respuesta en <0.5s.
+   [29867527216](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29867527216)) --
+   pronóstico real de temperatura, ej. 74-86°F en Yankee Stadium para
+   hoy/mañana en el horario típico de primer pitch (18-21h), respuesta
+   en <0.5s.
+3. **Coordenadas de estadio SIN mapeo manual**: `scripts/feasibility_spike_venues.py`
+   confirmó en vivo que `/venues/{id}?hydrate=location` devuelve
+   `defaultCoordinates` reales directamente de la API -- se descartó un
+   primer intento de mapeo escrito de memoria (riesgo real de datos
+   fabricados) en favor de resolver la ubicación en el momento, siempre
+   contra la fuente real.
 
 **Hipótesis (`analysis/weather_candidate_audit.py::evaluate_weather1()`)**:
 a diferencia de M1/M2/M3/ML1/RL1 (comparados contra un baseline débil),
@@ -524,9 +532,37 @@ aquí el baseline **es T1b mismo** (la mejor fórmula de Totales ya
 adoptada) -- la pregunta es si la temperatura real aporta algo **nuevo**
 más allá de lo que T1b ya predice, no si le gana a un baseline ingenuo.
 Ajuste logístico de 1 coeficiente sobre la desviación respecto a 70°F
-(referencia externa), elegido vía LOSO real. Pendiente de correr contra
-el histórico real hasta que termine la ingesta (paso 1) -- resultado
-real pendiente de reportar.
+(referencia externa), elegido vía LOSO real.
+
+Corrida real (`weather_candidate_audit.yml`, run
+[29870381219](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29870381219)),
+13,101 juegos:
+
+| | Brier |
+|---|---|
+| T1b (baseline, ya la mejor fórmula) | 0.24819 |
+| **Weather1 (T1b + ajuste por temperatura)** | **0.24644** |
+
+`delta_brier_mean=-0.00175` (CI `[-0.00241,-0.00109]`, significativo,
+por encima del umbral mínimo) -- **la temperatura aporta señal
+genuinamente nueva**. Coeficiente elegido por LOSO: `0.015` en 4 de las
+5 temporadas (`0.02` en la restante) -- señal positiva y estable, con el
+signo esperado por física de beisbol (más calor → aire menos denso → la
+pelota vuela más lejos → más probabilidad de over). Coeficiente final de
+producción (ajustado sobre las 5 temporadas completas): `0.015`.
+
+**✅ ADOPTADO -- autorización explícita del usuario, 2026-07-21**
+("Si"). Fórmula final:
+`analysis.weather_candidate_audit.predict_totals_over_prob_weather_adjusted(payload, temp_f)`
+-- `predict_totals_over_prob()` (T1b) →
+`temp_adjust_prob(coef=WEATHER1_ADOPTED_COEF=0.015)`. Integrada al
+orquestador de proyecciones en vivo (`scripts/build_live_projections.py`,
+campos `venue_id`, `temp_f_forecast`, `totals_over_prob_weather_adjusted`)
+y **verificada en vivo el mismo día** (run
+[29870769376](https://github.com/joassit/JSA_V2_PROJECT/actions/runs/29870769376),
+`conclusion=success`): ej. Yankee Stadium (`venue_id=3313`,
+`temp_f_forecast=76.5`), `totals_over_prob` sube de `0.499` a `0.524`
+con el ajuste -- exactamente la dirección esperada.
 
 ## Línea 1 -- Matchup Pitcher vs Lineup por mano (LHP/RHP)
 

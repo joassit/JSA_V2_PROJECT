@@ -172,14 +172,20 @@ fórmula final:
 `analysis.runline_candidate_audit.predict_runline_home_covers_prob(payload)`.
 Ver `docs/data_source_design.md`, sección "Resultado real de RL1/RL1b/RL1-Platt".
 
-**Weather1 (clima sobre Totales) -- EN PROGRESO (2026-07-21)**: pedido
+**Weather1 (clima sobre Totales) -- ✅ ADOPTADO (2026-07-21)**: pedido
 explícito del usuario para probar si la temperatura real mejora T1b
-(el baseline aquí es T1b mismo, no uno débil). Confirmado en vivo: MLB
-Stats API solo registra clima DESPUÉS del juego (`/feed/live`, nunca
-antes) -- se agregó Open-Meteo (gratis, sin API key, **confirmado en
-vivo**) para pronóstico en juegos futuros. Ingesta histórica de
-13,101 juegos en curso (`ingest_weather.yml`, puede tardar 1-3h). Ver
-`docs/data_source_design.md`, sección "Resultado real de Weather1".
+(el baseline aquí es T1b mismo, no uno débil). MLB Stats API solo
+registra clima DESPUÉS del juego (`/feed/live`, nunca antes) -- ingesta
+histórica completa (13,101/13,101 juegos, 0 errores, 5.2 min). Resultado:
+`Δbrier=-0.00175` (CI `[-0.00241,-0.00109]`, significativo) -- la
+temperatura aporta señal genuinamente nueva, coeficiente `0.015`
+(consistente con la física: más calor → más carreras). Pronóstico en
+vivo vía Open-Meteo (gratis, sin API key) + coordenadas de estadio
+resueltas en el momento contra `/venues/{id}` (sin ningún mapeo escrito a
+mano). Adoptada e **integrada al orquestador en vivo, verificada el
+mismo día** -- fórmula final:
+`analysis.weather_candidate_audit.predict_totals_over_prob_weather_adjusted(payload, temp_f)`.
+Ver `docs/data_source_design.md`, sección "Resultado real de Weather1".
 
 **Todos los spikes/ingestas de este proyecto corrieron en vivo contra
 GitHub Actions real** (no solo diseñados) -- `statsapi.mlb.com`
