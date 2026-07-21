@@ -26,7 +26,9 @@ from __future__ import annotations
 
 from scipy.stats import poisson
 
-from analysis.stats_utils import bootstrap_delta_brier, brier_score, roc_auc
+from analysis.stats_utils import (
+    bootstrap_delta_brier, brier_score, fit_platt_params, platt_calibrate, roc_auc,
+)
 
 LEAGUE_AVG_ERA = 4.30
 LEAGUE_AVG_RUNS_PER_GAME = 4.50
@@ -322,6 +324,85 @@ def evaluate_t1b_calibrated(
         "loso_auc_calibrated": roc_auc(loso_calibrated_probs, actuals),
         "brier_baseline": brier_score(baseline_probs, actuals),
         "brier_t1_uncalibrated": brier_score(model_raw, actuals),
+        **bootstrap,
+        "effect_size_ok": effect_size_ok,
+        "meets_all_3_conditions": meets_all_3,
+    }
+
+
+def evaluate_t1_platt_calibrated(
+    games: list[dict], n_resamples: int = 500, seed: int = 20260721,
+) -> dict:
+    """
+    T1-Platt -- misma proyeccion cruda de T1, pero calibrada con
+    regresion logistica de 2 parametros (`fit_platt_params()`/
+    `platt_calibrate()`, ver analysis/stats_utils.py) en vez del
+    shrinkage lineal de 1 parametro de T1b. Mismo procedimiento LEAVE-
+    ONE-SEASON-OUT: (a, b) se ajustan SOLO en las otras 4 temporadas,
+    nunca viendo la que se evalua. Se compara contra el mismo baseline de
+    T1/T1b (promedio de liga) Y contra el Brier LOSO ya adoptado de T1b
+    (`alpha=0.2` lineal), para responder directamente si la calibracion
+    logistica mejora sobre lo que ya esta en produccion.
+    """
+    s = _prepare_series(games)
+    model_raw, baseline_probs, actuals, seasons = (
+        s["model_raw_probs"], s["baseline_probs"], s["actuals"], s["seasons"]
+    )
+    n_covered = len(actuals)
+    seasons_sorted = sorted(set(seasons))
+
+    fold_platt: dict[int, dict] = {}
+    loso_platt_probs: list[float | None] = [None] * n_covered
+
+    for held_out in seasons_sorted:
+        train_idx = [i for i, sn in enumerate(seasons) if sn != held_out]
+        test_idx = [i for i, sn in enumerate(seasons) if sn == held_out]
+
+        train_probs = [model_raw[i] for i in train_idx]
+        train_actuals = [actuals[i] for i in train_idx]
+        a, b = fit_platt_params(train_probs, train_actuals)
+        train_brier = brier_score(platt_calibrate(train_probs, a, b), train_actuals)
+
+        fold_platt[held_out] = {"a": a, "b": b, "train_brier": train_brier, "n_test": len(test_idx)}
+        test_probs = [model_raw[i] for i in test_idx]
+        test_calibrated = platt_calibrate(test_probs, a, b)
+        for i, p_cal in zip(test_idx, test_calibrated):
+            loso_platt_probs[i] = p_cal
+
+    bootstrap = bootstrap_delta_brier(loso_platt_probs, baseline_probs, actuals, n_resamples=n_resamples, seed=seed)
+    effect_size_ok = bootstrap["delta_brier_mean"] is not None and abs(bootstrap["delta_brier_mean"]) >= 0.001
+    meets_all_3 = bool(
+        bootstrap["delta_brier_mean"] is not None
+        and bootstrap["delta_brier_mean"] < 0
+        and bootstrap["significant"]
+        and effect_size_ok
+    )
+
+    # Comparacion directa contra T1b (lineal, ya adoptada) -- misma
+    # metodologia LOSO, mismos folds, para saber si Platt aporta algo mas
+    # alla de lo que ya esta en produccion. T1b usa alpha=0.2 estable en
+    # las 5 temporadas (ver evaluate_t1b_calibrated), asi que aplicarlo
+    # directamente aqui (sin repetir el sweep LOSO) es equivalente y mas
+    # barato.
+    t1b_result = evaluate_t1b_calibrated(games, n_resamples=n_resamples, seed=seed)
+    t1b_calibrated_probs = [calibrate_prob(model_raw[i], T1B_ADOPTED_ALPHA) for i in range(n_covered)]
+    vs_t1b = bootstrap_delta_brier(loso_platt_probs, t1b_calibrated_probs, actuals, n_resamples=n_resamples, seed=seed)
+
+    return {
+        "hypothesis": "t1_platt_calibrated",
+        "target": "totals",
+        "totals_line": TOTALS_LINE,
+        "n_games_covered": n_covered,
+        "fold_platt_params": fold_platt,
+        "loso_brier_platt": brier_score(loso_platt_probs, actuals),
+        "loso_auc_platt": roc_auc(loso_platt_probs, actuals),
+        "brier_baseline": brier_score(baseline_probs, actuals),
+        "brier_t1_uncalibrated": brier_score(model_raw, actuals),
+        "brier_t1b_linear_calibrated": t1b_result["loso_brier_calibrated"],
+        "delta_brier_vs_t1b_linear": vs_t1b["delta_brier_mean"],
+        "vs_t1b_ci_low": vs_t1b["ci_low"],
+        "vs_t1b_ci_high": vs_t1b["ci_high"],
+        "vs_t1b_significant": vs_t1b["significant"],
         **bootstrap,
         "effect_size_ok": effect_size_ok,
         "meets_all_3_conditions": meets_all_3,

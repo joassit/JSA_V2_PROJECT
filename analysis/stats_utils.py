@@ -11,6 +11,54 @@ from __future__ import annotations
 import random
 
 import numpy as np
+from scipy.optimize import minimize
+
+
+def _safe_logit(p: np.ndarray) -> np.ndarray:
+    p = np.clip(p, 1e-6, 1 - 1e-6)
+    return np.log(p / (1 - p))
+
+
+def _sigmoid(z: np.ndarray) -> np.ndarray:
+    z = np.clip(z, -35, 35)
+    return 1.0 / (1.0 + np.exp(-z))
+
+
+def fit_platt_params(probs: list[float], actuals: list[int]) -> tuple[float, float]:
+    """
+    Calibracion logistica (Platt scaling): ajusta (a, b) de
+    `p_cal = sigmoid(a*logit(p) + b)` minimizando el BRIER SCORE sobre
+    (probs, actuals) -- deliberadamente el mismo objetivo de ajuste que el
+    grid search de `calibrate_prob()` (shrinkage lineal de 1 parametro en
+    totals_candidate_audit.py), no log-loss, para que comparar ambos
+    metodos de calibracion sea una comparacion justa (mismo criterio de
+    bondad de ajuste, distinta familia de funciones). 2 parametros en vez
+    de 1: puede corregir sub/sobreconfianza de forma distinta en los
+    extremos que en el centro, a diferencia del shrinkage lineal hacia
+    0.5 (que aplica la misma correccion proporcional en todo el rango).
+    `a=1, b=0` = identidad (sin cambio), es el punto de partida de la
+    optimizacion.
+    """
+    logits = _safe_logit(np.asarray(probs, dtype=float))
+    actuals_arr = np.asarray(actuals, dtype=float)
+
+    def loss(params: np.ndarray) -> float:
+        a, b = params
+        preds = _sigmoid(a * logits + b)
+        return float(np.mean((preds - actuals_arr) ** 2))
+
+    result = minimize(
+        loss, x0=np.array([1.0, 0.0]), method="Nelder-Mead",
+        options={"xatol": 1e-7, "fatol": 1e-10, "maxiter": 4000},
+    )
+    return float(result.x[0]), float(result.x[1])
+
+
+def platt_calibrate(probs: list[float], a: float, b: float) -> list[float]:
+    """Aplica la calibracion logistica ya ajustada (`fit_platt_params()`)
+    a una lista de probabilidades crudas."""
+    logits = _safe_logit(np.asarray(probs, dtype=float))
+    return _sigmoid(a * logits + b).tolist()
 
 
 def ops_from_raw_counts(ab: int, h: int, bb: int, hbp: int, sf: int, tb: int) -> float | None:

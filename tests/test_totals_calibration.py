@@ -6,6 +6,7 @@ from analysis.totals_candidate_audit import (
     ALPHA_CANDIDATES,
     T1B_ADOPTED_ALPHA,
     calibrate_prob,
+    evaluate_t1_platt_calibrated,
     evaluate_t1b_calibrated,
     poisson_over_prob,
     predict_totals_over_prob,
@@ -107,3 +108,42 @@ def test_predict_totals_over_prob_matches_manual_pipeline():
 
 def test_predict_totals_over_prob_none_when_payload_empty():
     assert predict_totals_over_prob({}) is None
+
+
+def test_evaluate_t1_platt_recovers_and_beats_baseline():
+    rng = random.Random(2027)
+    true_a, true_b = 0.5, 0.0
+    games = []
+    for season in (2023, 2024, 2025):
+        for _ in range(400):
+            games.append(_synthetic_game(rng, season, 1.0))  # sin shrinkage lineal, solo Platt corrige
+
+    # Reemplaza el actual_over de cada juego sintetico por uno generado
+    # con una transformacion logistica conocida (para que Platt tenga
+    # algo real que recuperar), en vez de calibrate_prob lineal.
+    import numpy as np
+
+    from analysis.totals_candidate_audit import project_total_runs
+
+    fixed_games = []
+    for g in games:
+        mu = project_total_runs(g["payload"])
+        p_raw = poisson_over_prob(mu)
+        logit_raw = np.log(p_raw / (1 - p_raw))
+        p_true = 1 / (1 + np.exp(-(true_a * logit_raw + true_b)))
+        actual_over = 1 if rng.random() < p_true else 0
+        total = 9 if actual_over else 8
+        fixed_games.append({
+            "season": g["season"], "payload": g["payload"],
+            "home_score": total // 2, "away_score": total - total // 2,
+        })
+
+    result = evaluate_t1_platt_calibrated(fixed_games, n_resamples=100, seed=10)
+    for key in (
+        "fold_platt_params", "loso_brier_platt", "brier_baseline",
+        "brier_t1_uncalibrated", "brier_t1b_linear_calibrated",
+        "delta_brier_vs_t1b_linear", "delta_brier_mean", "meets_all_3_conditions",
+    ):
+        assert key in result
+    # Con señal real inyectada, Platt debe mejorar sobre el baseline de liga.
+    assert result["loso_brier_platt"] < result["brier_baseline"]

@@ -24,7 +24,9 @@ from __future__ import annotations
 
 from scipy.stats import skellam
 
-from analysis.stats_utils import bootstrap_delta_brier, brier_score, roc_auc
+from analysis.stats_utils import (
+    bootstrap_delta_brier, brier_score, fit_platt_params, platt_calibrate, roc_auc,
+)
 from analysis.totals_candidate_audit import (
     STARTER_WEIGHT_IN_PITCHING, calibrate_prob, project_runs_pair,
 )
@@ -231,6 +233,75 @@ def evaluate_ml1b_calibrated(
         "loso_auc_calibrated": roc_auc(loso_calibrated_probs, actuals),
         "brier_baseline": brier_score(baseline_probs, actuals),
         "brier_ml1_uncalibrated": brier_score(model_raw, actuals),
+        **bootstrap,
+        "effect_size_ok": effect_size_ok,
+        "meets_all_3_conditions": meets_all_3,
+    }
+
+
+def evaluate_ml1_platt_calibrated(
+    games: list[dict], n_resamples: int = 500, seed: int = 20260721,
+) -> dict:
+    """
+    ML1-Platt -- misma proyeccion cruda de ML1, calibrada con regresion
+    logistica de 2 parametros (`fit_platt_params()`/`platt_calibrate()`)
+    en vez del shrinkage lineal de 1 parametro de ML1b. Mismo LEAVE-ONE-
+    SEASON-OUT que ML1b. Se compara contra el baseline de localia fija
+    (igual que ML1/ML1b) Y contra el Brier LOSO de ML1b (`alpha=0.2`
+    lineal, ya adoptada) para saber si Platt mejora sobre lo ya adoptado.
+    """
+    s = _prepare_series(games)
+    model_raw, actuals, seasons = s["model_raw_probs"], s["actuals"], s["seasons"]
+    baseline_probs = [BASELINE_HOME_WIN_RATE] * len(actuals)
+    n_covered = len(actuals)
+    seasons_sorted = sorted(set(seasons))
+
+    fold_platt: dict[int, dict] = {}
+    loso_platt_probs: list[float | None] = [None] * n_covered
+
+    for held_out in seasons_sorted:
+        train_idx = [i for i, sn in enumerate(seasons) if sn != held_out]
+        test_idx = [i for i, sn in enumerate(seasons) if sn == held_out]
+
+        train_probs = [model_raw[i] for i in train_idx]
+        train_actuals = [actuals[i] for i in train_idx]
+        a, b = fit_platt_params(train_probs, train_actuals)
+        train_brier = brier_score(platt_calibrate(train_probs, a, b), train_actuals)
+
+        fold_platt[held_out] = {"a": a, "b": b, "train_brier": train_brier, "n_test": len(test_idx)}
+        test_calibrated = platt_calibrate([model_raw[i] for i in test_idx], a, b)
+        for i, p_cal in zip(test_idx, test_calibrated):
+            loso_platt_probs[i] = p_cal
+
+    bootstrap = bootstrap_delta_brier(loso_platt_probs, baseline_probs, actuals, n_resamples=n_resamples, seed=seed)
+    effect_size_ok = bootstrap["delta_brier_mean"] is not None and abs(bootstrap["delta_brier_mean"]) >= 0.001
+    meets_all_3 = bool(
+        bootstrap["delta_brier_mean"] is not None
+        and bootstrap["delta_brier_mean"] < 0
+        and bootstrap["significant"]
+        and effect_size_ok
+    )
+
+    # Comparacion directa contra ML1b (lineal, ya adoptada) -- mismos
+    # juegos/folds.
+    ml1b_calibrated_probs = [calibrate_prob(model_raw[i], ML1B_ADOPTED_ALPHA) for i in range(n_covered)]
+    vs_ml1b = bootstrap_delta_brier(loso_platt_probs, ml1b_calibrated_probs, actuals, n_resamples=n_resamples, seed=seed)
+
+    return {
+        "hypothesis": "ml1_platt_calibrated",
+        "target": "moneyline",
+        "baseline_home_win_rate": BASELINE_HOME_WIN_RATE,
+        "n_games_covered": n_covered,
+        "fold_platt_params": fold_platt,
+        "loso_brier_platt": brier_score(loso_platt_probs, actuals),
+        "loso_auc_platt": roc_auc(loso_platt_probs, actuals),
+        "brier_baseline": brier_score(baseline_probs, actuals),
+        "brier_ml1_uncalibrated": brier_score(model_raw, actuals),
+        "brier_ml1b_linear_calibrated": brier_score(ml1b_calibrated_probs, actuals),
+        "delta_brier_vs_ml1b_linear": vs_ml1b["delta_brier_mean"],
+        "vs_ml1b_ci_low": vs_ml1b["ci_low"],
+        "vs_ml1b_ci_high": vs_ml1b["ci_high"],
+        "vs_ml1b_significant": vs_ml1b["significant"],
         **bootstrap,
         "effect_size_ok": effect_size_ok,
         "meets_all_3_conditions": meets_all_3,

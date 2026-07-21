@@ -5,6 +5,7 @@ from analysis.first5_candidate_audit import (
     STARTER_WEIGHT_F5,
     baseline_full_game_win_prob,
     evaluate_f1,
+    evaluate_f1_platt_calibrated,
     f1_first5_win_prob,
     predict_first5_home_win_prob,
     win_prob,
@@ -97,3 +98,46 @@ def test_evaluate_f1_ties_count_as_not_home_win():
     games = [{"season": 2024, "payload": {"home_ops": 0.7, "away_ops": 0.7}, "home_f5_result": "tie"} for _ in range(10)]
     result = evaluate_f1(games, n_resamples=10, seed=2)
     assert result["n_games_covered"] == 10
+
+
+def _synthetic_game_with_known_logistic_signal(rng, season, true_a, true_b):
+    import numpy as np
+
+    payload = {
+        "home_ops": rng.uniform(0.65, 0.85), "away_ops": rng.uniform(0.65, 0.85),
+        "home_starter_xera": rng.uniform(3.0, 5.5), "away_starter_xera": rng.uniform(3.0, 5.5),
+        "home_bullpen_era": rng.uniform(3.5, 5.0), "away_bullpen_era": rng.uniform(3.5, 5.0),
+        "league_avg_runs_per_game": 4.5, "league_avg_ops": 0.750, "league_avg_era": 4.30,
+        "park_factor": 1.0,
+    }
+    p_raw = f1_first5_win_prob(payload)
+    logit_raw = np.log(p_raw / (1 - p_raw))
+    p_true = 1 / (1 + np.exp(-(true_a * logit_raw + true_b)))
+    home_wins = rng.random() < p_true
+    return {"season": season, "payload": payload, "home_f5_result": "home" if home_wins else "away"}
+
+
+def test_evaluate_f1_platt_returns_expected_keys():
+    rng = random.Random(21)
+    games = (
+        [_synthetic_game_with_known_logistic_signal(rng, 2024, 0.5, 0.0) for _ in range(60)]
+        + [_synthetic_game_with_known_logistic_signal(rng, 2025, 0.5, 0.0) for _ in range(60)]
+    )
+    result = evaluate_f1_platt_calibrated(games, n_resamples=20, seed=22)
+    for key in (
+        "fold_platt_params", "loso_brier_platt", "brier_baseline",
+        "brier_f1_uncalibrated", "delta_brier_vs_f1_uncalibrated",
+        "delta_brier_mean", "significant", "meets_all_3_conditions",
+    ):
+        assert key in result
+
+
+def test_evaluate_f1_platt_beats_baseline_with_injected_signal():
+    rng = random.Random(2027)
+    games = []
+    for season in (2023, 2024, 2025):
+        for _ in range(400):
+            games.append(_synthetic_game_with_known_logistic_signal(rng, season, 0.6, 0.0))
+
+    result = evaluate_f1_platt_calibrated(games, n_resamples=100, seed=23)
+    assert result["loso_brier_platt"] < result["brier_baseline"]

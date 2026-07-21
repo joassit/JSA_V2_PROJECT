@@ -16,7 +16,9 @@ from __future__ import annotations
 
 from scipy.stats import skellam
 
-from analysis.stats_utils import bootstrap_delta_brier, brier_score, roc_auc
+from analysis.stats_utils import (
+    bootstrap_delta_brier, brier_score, fit_platt_params, platt_calibrate, roc_auc,
+)
 from analysis.totals_candidate_audit import STARTER_WEIGHT_IN_PITCHING, project_runs_pair
 
 # El abridor lanza practicamente todas las primeras 5 entradas -- el
@@ -133,6 +135,88 @@ def evaluate_f1(games: list[dict], n_resamples: int = 500, seed: int = 20260720)
         "brier_model": brier_score(model_probs, actuals),
         "brier_baseline": brier_score(baseline_probs, actuals),
         "by_season": by_season,
+        **bootstrap,
+        "effect_size_ok": effect_size_ok,
+        "meets_all_3_conditions": meets_all_3,
+    }
+
+
+def evaluate_f1_platt_calibrated(
+    games: list[dict], n_resamples: int = 500, seed: int = 20260721,
+) -> dict:
+    """
+    F1-Platt -- a diferencia de T1/ML1, F1 NUNCA tuvo un paso de
+    calibracion de probabilidad (la formula adoptada es reponderacion +
+    escalado, sin `calibrate_prob`) -- esta es la PRIMERA vez que se
+    prueba calibrar F1. Calibracion logistica de 2 parametros
+    (`fit_platt_params()`/`platt_calibrate()`) sobre la probabilidad
+    cruda de `f1_first5_win_prob()`, ajustada via LEAVE-ONE-SEASON-OUT
+    (mismo procedimiento que T1-Platt/ML1-Platt). Se compara contra el
+    mismo baseline de F1 (`baseline_full_game_win_prob`, el proxy de
+    juego completo) Y contra la propia F1 SIN calibrar (ya adoptada), que
+    aqui hace de "T1b/ML1b" -- el punto de comparacion previo.
+    """
+    model_raw, baseline_probs, actuals, seasons = [], [], [], []
+    for g in games:
+        payload = g.get("payload")
+        f5_result = g.get("home_f5_result")
+        if payload is None or f5_result is None:
+            continue
+        model_p = f1_first5_win_prob(payload)
+        baseline_p = baseline_full_game_win_prob(payload)
+        if model_p is None or baseline_p is None:
+            continue
+        model_raw.append(model_p)
+        baseline_probs.append(baseline_p)
+        actuals.append(1 if f5_result == "home" else 0)
+        seasons.append(g.get("season"))
+
+    n_covered = len(actuals)
+    seasons_sorted = sorted(set(seasons))
+
+    fold_platt: dict[int, dict] = {}
+    loso_platt_probs: list[float | None] = [None] * n_covered
+
+    for held_out in seasons_sorted:
+        train_idx = [i for i, sn in enumerate(seasons) if sn != held_out]
+        test_idx = [i for i, sn in enumerate(seasons) if sn == held_out]
+
+        train_probs = [model_raw[i] for i in train_idx]
+        train_actuals = [actuals[i] for i in train_idx]
+        a, b = fit_platt_params(train_probs, train_actuals)
+        train_brier = brier_score(platt_calibrate(train_probs, a, b), train_actuals)
+
+        fold_platt[held_out] = {"a": a, "b": b, "train_brier": train_brier, "n_test": len(test_idx)}
+        test_calibrated = platt_calibrate([model_raw[i] for i in test_idx], a, b)
+        for i, p_cal in zip(test_idx, test_calibrated):
+            loso_platt_probs[i] = p_cal
+
+    bootstrap = bootstrap_delta_brier(loso_platt_probs, baseline_probs, actuals, n_resamples=n_resamples, seed=seed)
+    effect_size_ok = bootstrap["delta_brier_mean"] is not None and abs(bootstrap["delta_brier_mean"]) >= 0.001
+    meets_all_3 = bool(
+        bootstrap["delta_brier_mean"] is not None
+        and bootstrap["delta_brier_mean"] < 0
+        and bootstrap["significant"]
+        and effect_size_ok
+    )
+
+    # Comparacion directa contra F1 sin calibrar (ya adoptada) -- misma
+    # metodologia, mismos folds/juegos.
+    vs_f1_raw = bootstrap_delta_brier(loso_platt_probs, model_raw, actuals, n_resamples=n_resamples, seed=seed)
+
+    return {
+        "hypothesis": "f1_platt_calibrated",
+        "target": "first5",
+        "n_games_covered": n_covered,
+        "fold_platt_params": fold_platt,
+        "loso_brier_platt": brier_score(loso_platt_probs, actuals),
+        "loso_auc_platt": roc_auc(loso_platt_probs, actuals),
+        "brier_baseline": brier_score(baseline_probs, actuals),
+        "brier_f1_uncalibrated": brier_score(model_raw, actuals),
+        "delta_brier_vs_f1_uncalibrated": vs_f1_raw["delta_brier_mean"],
+        "vs_f1_ci_low": vs_f1_raw["ci_low"],
+        "vs_f1_ci_high": vs_f1_raw["ci_high"],
+        "vs_f1_significant": vs_f1_raw["significant"],
         **bootstrap,
         "effect_size_ok": effect_size_ok,
         "meets_all_3_conditions": meets_all_3,
