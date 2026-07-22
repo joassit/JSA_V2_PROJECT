@@ -257,6 +257,21 @@ acerca la hora del juego). Verificado en vivo (run
 15 filas persistidas sin errores, con las 5 probabilidades
 (T1b/Weather1/F1-Platt/ML1b/RL1-Platt) y `temp_f_forecast` en cada fila.
 
+**Dashboard público en GitHub Pages (2026-07-22)**: pedido explícito del
+usuario ("Dale con el 1" / "Dale, es público, arma el dashboard"). Cada
+corrida del cron escribe `site/index.html` (`analysis/dashboard.py`) --
+una tabla estática, sin JS, con las 5 probabilidades adoptadas por
+juego, abridores, estadio y pronóstico de temperatura (nombres reales de
+equipo/pitcher/estadio, ya provistos por el mismo `hydrate=team` del
+calendario, confirmado en vivo desde el spike original -- cero datos
+inventados). El workflow lo publica en la branch `gh-pages` vía
+`peaceiris/actions-gh-pages`. **Repo público, confirmado explícitamente
+con el usuario antes de habilitarlo** -- el dashboard queda accesible
+para cualquiera en internet, igual que el resto del código. Falta un
+paso manual único, no automatizable desde este entorno: activar GitHub
+Pages en Settings → Pages → Source: "Deploy from a branch" → `gh-pages`
+/ `(root)`.
+
 ## Estructura
 
 ```

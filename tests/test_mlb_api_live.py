@@ -15,10 +15,16 @@ def test_parse_schedule_games_extracts_teams_and_probables():
                     {
                         "gamePk": 123,
                         "teams": {
-                            "home": {"team": {"id": 142}, "probablePitcher": {"id": 800048}},
-                            "away": {"team": {"id": 114}, "probablePitcher": {"id": 999}},
+                            "home": {
+                                "team": {"id": 142, "name": "Minnesota Twins"},
+                                "probablePitcher": {"id": 800048, "fullName": "Parker Messick"},
+                            },
+                            "away": {
+                                "team": {"id": 114, "name": "Cleveland Guardians"},
+                                "probablePitcher": {"id": 999, "fullName": "Tanner Bibee"},
+                            },
                         },
-                        "venue": {"id": 5},
+                        "venue": {"id": 5, "name": "Target Field"},
                     }
                 ]
             }
@@ -28,6 +34,9 @@ def test_parse_schedule_games_extracts_teams_and_probables():
     assert games == [{
         "game_pk": 123, "home_team_id": 142, "away_team_id": 114,
         "home_pitcher_id": 800048, "away_pitcher_id": 999, "venue_id": 5,
+        "home_team_name": "Minnesota Twins", "away_team_name": "Cleveland Guardians",
+        "home_pitcher_name": "Parker Messick", "away_pitcher_name": "Tanner Bibee",
+        "venue_name": "Target Field",
     }]
 
 
@@ -51,6 +60,8 @@ def test_parse_schedule_games_allows_missing_probable_pitcher():
     assert games == [{
         "game_pk": 5, "home_team_id": 1, "away_team_id": 2,
         "home_pitcher_id": None, "away_pitcher_id": None, "venue_id": None,
+        "home_team_name": None, "away_team_name": None,
+        "home_pitcher_name": None, "away_pitcher_name": None, "venue_name": None,
     }]
 
 

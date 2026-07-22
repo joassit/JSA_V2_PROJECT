@@ -313,19 +313,27 @@ def get_schedule_with_probables(target_date: str, timeout: int = 15) -> dict | N
 def parse_schedule_games(payload: dict) -> list[dict]:
     """Reduce el calendario crudo a una lista de
     {game_pk, home_team_id, away_team_id, home_pitcher_id, away_pitcher_id,
-    venue_id} -- solo juegos con ambos abridores probables ya anunciados.
-    `venue_id` se usa para el pronostico de clima (ver
-    analysis/ballpark_locations.py) -- puede ser None si el calendario no
-    trae `venue` para ese juego."""
+    venue_id, home_team_name, away_team_name, home_pitcher_name,
+    away_pitcher_name, venue_name} -- solo juegos con ambos abridores
+    probables ya anunciados. `venue_id` se usa para el pronostico de
+    clima (coordenadas resueltas en vivo via get_venue_location_raw(),
+    sin mapeo manual) -- puede ser None si el calendario no trae `venue`
+    para ese juego. Los campos `*_name` vienen del mismo hydrate=team (ya
+    confirmados en vivo por scripts/feasibility_spike_live_schedule.py,
+    solo se usan para mostrar, nunca para logica de negocio)."""
     games: list[dict] = []
     for d in payload.get("dates") or []:
         for g in d.get("games") or []:
             teams = g.get("teams") or {}
             home, away = teams.get("home") or {}, teams.get("away") or {}
-            home_team_id = (home.get("team") or {}).get("id")
-            away_team_id = (away.get("team") or {}).get("id")
-            home_pitcher_id = (home.get("probablePitcher") or {}).get("id")
-            away_pitcher_id = (away.get("probablePitcher") or {}).get("id")
+            home_team = home.get("team") or {}
+            away_team = away.get("team") or {}
+            home_team_id = home_team.get("id")
+            away_team_id = away_team.get("id")
+            home_pitcher = home.get("probablePitcher") or {}
+            away_pitcher = away.get("probablePitcher") or {}
+            home_pitcher_id = home_pitcher.get("id")
+            away_pitcher_id = away_pitcher.get("id")
             if None in (home_team_id, away_team_id):
                 continue
             games.append({
@@ -333,6 +341,11 @@ def parse_schedule_games(payload: dict) -> list[dict]:
                 "home_team_id": home_team_id, "away_team_id": away_team_id,
                 "home_pitcher_id": home_pitcher_id, "away_pitcher_id": away_pitcher_id,
                 "venue_id": (g.get("venue") or {}).get("id"),
+                "home_team_name": home_team.get("name"),
+                "away_team_name": away_team.get("name"),
+                "home_pitcher_name": home_pitcher.get("fullName"),
+                "away_pitcher_name": away_pitcher.get("fullName"),
+                "venue_name": (g.get("venue") or {}).get("name"),
             })
     return games
 

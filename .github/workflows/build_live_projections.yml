@@ -13,6 +13,13 @@ name: build_live_projections
 # dia (tipicamente disponibles la noche anterior o temprano en la
 # mañana), sin ser tan tarde como para perderse juegos con horario de
 # tarde/dia.
+# Dashboard: cada corrida escribe site/index.html (analysis/dashboard.py)
+# y este workflow lo publica en GitHub Pages (branch gh-pages, via
+# peaceiris/actions-gh-pages) -- pedido explicito del usuario, repo
+# publico confirmado, 2026-07-22. Requiere un paso manual UNICO en la UI
+# de GitHub (no automatizable via los tools de este entorno): Settings ->
+# Pages -> Build and deployment -> Source: "Deploy from a branch" ->
+# Branch: gh-pages / (root).
 on:
   workflow_dispatch:
     inputs:
@@ -22,6 +29,9 @@ on:
         default: ""
   schedule:
     - cron: "0 12 * * *"
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -41,3 +51,8 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.date == '' }}
         env:
           JSA_SHARED_DATABASE_URL: ${{ secrets.JSA_SHARED_DATABASE_URL }}
+      - name: Publicar dashboard en GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site

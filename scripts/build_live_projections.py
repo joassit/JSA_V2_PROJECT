@@ -27,6 +27,12 @@ script por cron sin intervencion manual, ver
 .github/workflows/build_live_projections.yml (`schedule:`). Cada corrida
 agrega filas nuevas (no actualiza in place) para conservar como cambio
 la proyeccion a medida que se acercaba el juego real.
+
+Ademas escribe site/index.html (analysis/dashboard.py) -- publicado en
+GitHub Pages por el mismo workflow tras cada corrida, pedido explicito
+del usuario ("Dale con el 1" / "Dale, es publico, arma el dashboard",
+2026-07-22). Repo publico, dashboard publico -- confirmado
+explicitamente antes de habilitarlo.
 """
 
 from __future__ import annotations
@@ -40,6 +46,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from analysis.dashboard import render_dashboard
 from analysis.first5_candidate_audit import predict_first5_home_win_prob
 from analysis.live_snapshot import aggregate_bullpen_era, compute_league_averages
 from analysis.moneyline_candidate_audit import predict_moneyline_home_win_prob
@@ -178,6 +185,11 @@ def build_live_projections(target_date: str, season: int) -> list[dict]:
             "home_pitcher_id": home_pitcher_id,
             "away_pitcher_id": away_pitcher_id,
             "venue_id": g.get("venue_id"),
+            "home_team_name": g.get("home_team_name"),
+            "away_team_name": g.get("away_team_name"),
+            "home_pitcher_name": g.get("home_pitcher_name"),
+            "away_pitcher_name": g.get("away_pitcher_name"),
+            "venue_name": g.get("venue_name"),
             "temp_f_forecast": temp_f,
             "totals_line": TOTALS_LINE,
             "totals_over_prob": predict_totals_over_prob(payload),
@@ -231,6 +243,12 @@ def main() -> int:
 
     persist_projections(results, target_date)
     print(f"{len(results)} filas persistidas en live_projection.", file=sys.stderr)
+
+    site_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "site")
+    os.makedirs(site_dir, exist_ok=True)
+    with open(os.path.join(site_dir, "index.html"), "w", encoding="utf-8") as f:
+        f.write(render_dashboard(results, target_date))
+    print(f"Dashboard escrito en {site_dir}/index.html.", file=sys.stderr)
     return 0
 
 

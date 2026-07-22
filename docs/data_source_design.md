@@ -912,6 +912,35 @@ intervención manual, y persiste cada corrida.
   presentes en cada fila (ej. `game_pk=824735`, `venue_id=3`,
   `temp_f_forecast=71.5`, `totals_over_prob_weather_adjusted=0.455`).
 
+**✅ Dashboard público en GitHub Pages -- autorización explícita del
+usuario, 2026-07-22** ("Dale con el 1" tras elegir explícitamente
+"Dashboard HTML en GitHub Pages" sobre las otras 2 opciones -- reporte
+Markdown commiteado, o API HTTP -- y confirmar que el repo es público y
+está bien que quede accesible en internet):
+
+- `analysis/dashboard.py::render_dashboard(results, target_date)` --
+  HTML estático de una sola página, sin JS ni dependencias externas, con
+  una tabla de las 5 probabilidades adoptadas por juego + abridores +
+  estadio + pronóstico de temperatura. Recibe directamente los `results`
+  que ya arma el orquestador en la misma corrida -- no hace falta
+  columna nueva en `live_projection` para nombres, ni una query aparte.
+- Nombres de equipo/pitcher/estadio: extendido `parse_schedule_games()`
+  (`data_sources/mlb_api.py`) para exponer `home_team_name`,
+  `away_team_name`, `home_pitcher_name`, `away_pitcher_name`,
+  `venue_name` -- **ya venían en el mismo payload de
+  `hydrate=probablePitcher,team`**, confirmado en vivo por el spike
+  original (`feasibility_spike_live_schedule.py`, que ya imprimía
+  `name=`/`fullName=` sin usarlos); solo faltaba propagarlos, cero
+  llamadas de red nuevas.
+- `scripts/build_live_projections.py::main()` escribe `site/index.html`
+  después de persistir, y `build_live_projections.yml` agrega un paso
+  final con `peaceiris/actions-gh-pages@v4` (`publish_dir: ./site`) que
+  publica ese archivo en la branch `gh-pages`.
+- **Paso manual único, no automatizable desde este entorno** (no hay tool
+  de GitHub MCP disponible para cambiar configuración del repo): activar
+  GitHub Pages en Settings → Pages → Build and deployment → Source:
+  "Deploy from a branch" → Branch: `gh-pages` / `(root)`.
+
 ### Qué falta por integrar (2026-07-21, tras adoptar ML1b)
 
 1. ~~Verificación en vivo de `moneyline_home_win_prob`~~ -- **✅ resuelto**

@@ -6,3 +6,7 @@ venv/
 *.egg-info/
 .env
 .cache/
+
+# Dashboard generado por scripts/build_live_projections.py -- se publica
+# en GitHub Pages (branch gh-pages) via el workflow, nunca se commitea a main.
+/site/
